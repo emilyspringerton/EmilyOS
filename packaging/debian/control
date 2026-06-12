@@ -1,0 +1,13 @@
+Package: emilyos
+Version: 0.1.0
+Architecture: amd64
+Maintainer: Emily Springerton <emilyspringerton@gmail.com>
+Depends: systemd
+Description: EmilyOS policy kernel
+ A Linux-based operating environment implementing posture-gated sessions,
+ capability-checked agency verbs, tamper-evident audit logging, and SOC 2
+ Type II-ready controls. The policy kernel that enforces deliberate, auditable
+ interaction on Linux.
+Section: admin
+Priority: optional
+Homepage: https://github.com/emilyspringerton/EmilyOS

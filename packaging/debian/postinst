@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+# Create runtime state directory
+mkdir -p /var/lib/emilyos/audit
+chmod 750 /var/lib/emilyos /var/lib/emilyos/audit
+
+# Create config directory if not present
+mkdir -p /etc/emilyos
+if [ ! -f /etc/emilyos/policy.json ]; then
+    cat > /etc/emilyos/policy.json << 'EOF'
+{"version":1,"roles":{},"capabilities":{}}
+EOF
+fi
+
+# Enable and start systemd unit
+if [ -x /usr/bin/deb-systemd-helper ]; then
+    deb-systemd-helper enable emilyos.service
+fi
+
+exit 0

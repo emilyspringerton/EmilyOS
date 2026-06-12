@@ -1,6 +1,7 @@
-emilyos
+/emilyos
 var/posture.json
 var/audit.jsonl
 var/policy/
 var/*.env
 *.test
+dist/
