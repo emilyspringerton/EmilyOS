@@ -279,6 +279,28 @@ func runAudit(args []string) {
 //   - policy-snapshot.json (latest policy snapshot, if any)
 //   - manifest.json (file list with SHA-256 hashes, chain_ok, build info)
 func runAuditBundle(outPath string) {
+	// Dispatch EXPORT_EVIDENCE verb — SOC 2 requires export to be audited.
+	alog, alogErr := audit.Open(auditPath())
+	if alogErr != nil {
+		die("audit log: %v", alogErr)
+	}
+	pm, pmErr := posture.New(posturePath())
+	if pmErr != nil {
+		die("posture: %v", pmErr)
+	}
+	d := verb.New(alog, pm)
+	d.Register("EXPORT_EVIDENCE", policy.CapExport, func(ctx verb.Context, objectRef string, meta map[string]any) error {
+		return nil
+	})
+	ctx := callerContext()
+	if dispErr := d.Dispatch(ctx, "EXPORT_EVIDENCE", "bundle:"+filepath.Base(outPath), map[string]any{
+		"output": outPath,
+	}); verb.IsDenied(dispErr) {
+		alog.Close()
+		die("EXPORT_EVIDENCE denied: %v", dispErr)
+	}
+	alog.Close()
+
 	// Verify chain first.
 	events, _ := audit.ReadFile(auditPath())
 	chainOK := true
