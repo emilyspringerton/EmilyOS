@@ -19,6 +19,10 @@
 package main
 
 import (
+	"archive/tar"
+	"compress/gzip"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -251,6 +255,12 @@ func runAudit(args []string) {
 			die("audit export: <outdir> required")
 		}
 		runAuditExport(args[1])
+	case "bundle":
+		outPath := "soc2-evidence.tar.gz"
+		if len(args) >= 2 {
+			outPath = args[1]
+		}
+		runAuditBundle(outPath)
 	case "history":
 		n := 20
 		if len(args) >= 2 {
@@ -261,6 +271,102 @@ func runAudit(args []string) {
 		runAuditHistory(n)
 	default:
 		die("unknown audit subcommand: %s", args[0])
+	}
+}
+
+// runAuditBundle produces a tar.gz SOC 2 evidence bundle containing:
+//   - audit.jsonl (full audit log)
+//   - policy-snapshot.json (latest policy snapshot, if any)
+//   - manifest.json (file list with SHA-256 hashes, chain_ok, build info)
+func runAuditBundle(outPath string) {
+	// Verify chain first.
+	events, _ := audit.ReadFile(auditPath())
+	chainOK := true
+	if verifyErr := audit.VerifyEvents(events); verifyErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: chain verification failed: %v\n", verifyErr)
+		chainOK = false
+	}
+
+	// Collect files.
+	type bundleFile struct {
+		name string
+		data []byte
+	}
+	var files []bundleFile
+
+	// audit.jsonl
+	auditData, _ := os.ReadFile(auditPath())
+	files = append(files, bundleFile{"audit.jsonl", auditData})
+
+	// latest policy snapshot
+	ss, _ := policy.NewSnapshotStore(snapshotPath())
+	if latestSnap, _ := ss.Latest(); latestSnap != nil {
+		snapData, _ := json.MarshalIndent(latestSnap, "", "  ")
+		files = append(files, bundleFile{"policy-snapshot.json", append(snapData, '\n')})
+	}
+
+	// Compute SHA-256 for each file.
+	type fileEntry struct {
+		Name   string `json:"name"`
+		Bytes  int    `json:"bytes"`
+		SHA256 string `json:"sha256"`
+	}
+	var entries []fileEntry
+	for _, f := range files {
+		sum := sha256.Sum256(f.data)
+		entries = append(entries, fileEntry{
+			Name:   f.name,
+			Bytes:  len(f.data),
+			SHA256: hex.EncodeToString(sum[:]),
+		})
+	}
+
+	// Build manifest.
+	manifest := map[string]any{
+		"export_ts":    time.Now().UTC().Format(time.RFC3339),
+		"event_count":  len(events),
+		"chain_ok":     chainOK,
+		"build_commit": buildCommit,
+		"build_id":     version + "+" + buildDate,
+		"actor":        callerContext().ActorID,
+		"files":        entries,
+	}
+	manifestData, _ := json.MarshalIndent(manifest, "", "  ")
+	files = append(files, bundleFile{"manifest.json", append(manifestData, '\n')})
+
+	// Write tar.gz.
+	out, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
+	if err != nil {
+		die("create bundle: %v", err)
+	}
+	defer out.Close()
+
+	gw := gzip.NewWriter(out)
+	tw := tar.NewWriter(gw)
+	for _, f := range files {
+		hdr := &tar.Header{
+			Name:    f.name,
+			Size:    int64(len(f.data)),
+			Mode:    0o640,
+			ModTime: time.Now().UTC(),
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			die("tar header: %v", err)
+		}
+		if _, err := tw.Write(f.data); err != nil {
+			die("tar write: %v", err)
+		}
+	}
+	_ = tw.Close()
+	_ = gw.Close()
+
+	fmt.Printf("bundle written: %s\n", outPath)
+	fmt.Printf("  events: %d  chain_ok: %v\n", len(events), chainOK)
+	for _, e := range entries {
+		fmt.Printf("  %-30s  %s  (%d bytes)\n", e.Name, e.SHA256[:16]+"…", e.Bytes)
+	}
+	if !chainOK {
+		os.Exit(3)
 	}
 }
 
