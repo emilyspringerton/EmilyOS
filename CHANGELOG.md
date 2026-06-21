@@ -1,4 +1,5 @@
 ## 2026-06-21
+- feat: S54-02 EXPORT_EVIDENCE verb audit + TestBundleManifestVerification (Milestone 5 complete) (Apple #2372)
 - feat: S54-01 POLICY_ROLLBACK verb + TestSnapshotRollback (Milestone 4 complete) (Apple #2370)
 - feat: S50-02 emilyos audit bundle — tar.gz SOC 2 evidence bundle (Apple #2353)
 - feat: S50-01 policy snapshot store tests + emilyos about/snapshot commands (Apple #2349)
