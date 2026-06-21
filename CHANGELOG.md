@@ -1,4 +1,5 @@
 ## 2026-06-21
+- feat: S54-01 POLICY_ROLLBACK verb + TestSnapshotRollback (Milestone 4 complete) (Apple #2370)
 - feat: S50-02 emilyos audit bundle — tar.gz SOC 2 evidence bundle (Apple #2353)
 - feat: S50-01 policy snapshot store tests + emilyos about/snapshot commands (Apple #2349)
 - feat: S48-03 emilyos audit history — posture transition log (Apple #2343)
