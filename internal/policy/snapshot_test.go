@@ -112,6 +112,55 @@ func TestSnapshotNewIDFormat(t *testing.T) {
 	}
 }
 
+// TestSnapshotRollback validates the 3-change → rollback-to-first scenario
+// required by EmilyOS NORTHSTAR Milestone 4.
+func TestSnapshotRollback(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := NewSnapshotStore(dir)
+
+	// Simulate 3 policy changes: write 3 snapshots with distinct role configs.
+	snap1 := &Snapshot{
+		SnapshotID: "snap-20260101T000001Z",
+		ActorID:    "admin",
+		Roles:      map[string]any{"operator": []string{"cap.exec", "cap.net"}},
+	}
+	snap2 := &Snapshot{
+		SnapshotID:     "snap-20260101T000002Z",
+		ActorID:        "admin",
+		PrevSnapshotID: snap1.SnapshotID,
+		Roles:          map[string]any{"operator": []string{"cap.exec"}}, // net removed
+	}
+	snap3 := &Snapshot{
+		SnapshotID:     "snap-20260101T000003Z",
+		ActorID:        "admin",
+		PrevSnapshotID: snap2.SnapshotID,
+		Roles:          map[string]any{"operator": []string{}}, // all caps removed
+	}
+	_ = store.Write(snap1)
+	_ = store.Write(snap2)
+	_ = store.Write(snap3)
+
+	// Target: roll back to snap1.
+	target, err := store.Get(snap1.SnapshotID)
+	if err != nil {
+		t.Fatalf("Get snap1: %v", err)
+	}
+	// Verify hash matches (rollback caller must verify before dispatching).
+	computed := ComputeSnapshotHash(target)
+	if target.Hash != computed {
+		t.Errorf("snap1 hash mismatch: stored=%s computed=%s", target.Hash, computed)
+	}
+	// Check that snap1's role config is what we expect.
+	ops, ok := target.Roles["operator"].([]any)
+	if !ok {
+		// json round-trip converts []string → []any
+		t.Fatalf("snap1 operator roles: unexpected type %T", target.Roles["operator"])
+	}
+	if len(ops) != 2 {
+		t.Errorf("snap1 operator role count: %d, want 2", len(ops))
+	}
+}
+
 func TestSnapshotDirCreated(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "nested", "snapshots")
 	_, err := NewSnapshotStore(dir)

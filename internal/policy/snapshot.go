@@ -99,6 +99,12 @@ func NewSnapshotID() string {
 	return "snap-" + time.Now().UTC().Format("20060102T150405Z")
 }
 
+// ComputeSnapshotHash computes the deterministic SHA-256 hash of a snapshot.
+// Exported so callers can verify stored hashes without calling Write.
+func ComputeSnapshotHash(snap *Snapshot) string {
+	return computeSnapshotHash(snap)
+}
+
 func computeSnapshotHash(snap *Snapshot) string {
 	h := sha256.New()
 	fmt.Fprintf(h, "%s\n%s\n%s\n%s\n%s\n%s",

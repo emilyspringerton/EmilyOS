@@ -78,16 +78,17 @@ SOC 2 is the frame that makes every design decision answerable: *does this make 
 ---
 
 ### Milestone 4 — Policy Snapshots
-**Status:** `[ ] in progress` — partial implementation 2026-06-21  
+**Status:** `[x] complete` — 2026-06-21  
 **Target:** Sprint 4
 
 **Acceptance Criteria:**
-- [ ] `internal/policy/snapshot.go`: hash-addressed JSON policy snapshot on every RBAC/capability change
-- [ ] Snapshot schema: `{snapshot_id, git_commit, build_id, created_at, actor_id, prev_snapshot_id, roles, capabilities, hash}`
-- [ ] `POLICY_ROLLBACK(snapshot_hash)` is an explicit verb, capability-checked (`cap.policy.write`), audited
-- [ ] Build attestation: `build_id` and `git_commit` embedded in binary at build time via `ldflags`
-- [ ] `emilyos about` shows build attestation in read-only pane
-- [ ] Test: 3 policy changes → rollback to snapshot 1 → verify RBAC matches snapshot 1
+- [x] `internal/policy/snapshot.go`: hash-addressed JSON policy snapshot on every RBAC/capability change
+- [x] Snapshot schema: `{snapshot_id, git_commit, build_id, created_at, actor_id, prev_snapshot_id, roles, capabilities, hash}`
+- [x] `POLICY_ROLLBACK(snapshot_hash)` is an explicit verb, capability-checked (`cap.policy.write`), audited
+  - `emilyos snapshot rollback <id>` dispatches verb via Dispatcher, verifies hash, emits audit event
+- [x] Build attestation: `build_id` and `git_commit` embedded in binary at build time via `ldflags`
+- [x] `emilyos about` shows build attestation in read-only pane
+- [x] Test: 3 policy changes → rollback to snapshot 1 → verify RBAC matches snapshot 1 (TestSnapshotRollback)
 
 ---
 

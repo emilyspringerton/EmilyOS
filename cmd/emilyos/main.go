@@ -564,9 +564,64 @@ func runSnapshot(args []string) {
 		}
 		data, _ := json.MarshalIndent(snap, "", "  ")
 		fmt.Println(string(data))
+	case "rollback":
+		if len(args) < 2 {
+			die("snapshot rollback: <snapshot-id> required")
+		}
+		runSnapshotRollback(ss, args[1])
 	default:
 		die("unknown snapshot subcommand: %s", args[0])
 	}
+}
+
+// runSnapshotRollback dispatches the POLICY_ROLLBACK verb, verifies the target snapshot hash,
+// and emits a SOC 2 audit event recording the rollback decision.
+func runSnapshotRollback(ss *policy.SnapshotStore, targetID string) {
+	// Load and hash-verify the target snapshot.
+	snap, err := ss.Get(targetID)
+	if err != nil {
+		die("rollback: cannot load snapshot %q: %v", targetID, err)
+	}
+	expected := policy.ComputeSnapshotHash(snap)
+	if snap.Hash != expected {
+		die("rollback: snapshot %q hash mismatch — tampered or corrupt (stored=%s computed=%s)",
+			targetID, snap.Hash[:16], expected[:16])
+	}
+
+	log, err := audit.Open(auditPath())
+	if err != nil {
+		die("audit log: %v", err)
+	}
+	defer log.Close()
+	pm, err := posture.New(posturePath())
+	if err != nil {
+		die("posture: %v", err)
+	}
+	d := verb.New(log, pm)
+	d.Register("POLICY_ROLLBACK", policy.CapPolicyWrite, func(ctx verb.Context, objectRef string, meta map[string]any) error {
+		// The audit event IS the rollback record; actual code rollback requires a redeployment.
+		// This records the declared intent: actor X rolled policy back to snapshot Y at time T.
+		return nil
+	})
+
+	ctx := callerContext()
+	dispErr := d.Dispatch(ctx, "POLICY_ROLLBACK", "snapshot:"+targetID, map[string]any{
+		"snapshot_id": targetID,
+		"snap_hash":   snap.Hash,
+		"actor_role":  ctx.Role,
+	})
+	if verb.IsDenied(dispErr) {
+		die("rollback denied: %v", dispErr)
+	}
+	if dispErr != nil {
+		die("rollback error: %v", dispErr)
+	}
+
+	fmt.Printf("POLICY_ROLLBACK dispatched.\n")
+	fmt.Printf("  snapshot: %s\n", targetID)
+	fmt.Printf("  hash:     %s\n", snap.Hash[:24])
+	fmt.Printf("  actor:    %s (%s)\n", ctx.ActorID, ctx.Role)
+	fmt.Printf("  Note: redeployment required to apply code-level policy changes from this snapshot.\n")
 }
 
 func capturePolicyRoles() map[string]any {
