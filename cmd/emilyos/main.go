@@ -22,8 +22,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strconv"
+	"time"
 
 	"emilyos/internal/audit"
 	"emilyos/internal/policy"
@@ -232,9 +235,88 @@ func runAudit(args []string) {
 		}
 		events, _ := audit.ReadFile(auditPath())
 		fmt.Printf("ok — %d events, chain intact\n", len(events))
+	case "export":
+		if len(args) < 2 {
+			die("audit export: <outdir> required")
+		}
+		runAuditExport(args[1])
 	default:
 		die("unknown audit subcommand: %s", args[0])
 	}
+}
+
+// runAuditExport writes audit.jsonl + manifest.json to outdir for SOC 2 evidence.
+func runAuditExport(outdir string) {
+	if err := os.MkdirAll(outdir, 0o750); err != nil {
+		die("create outdir: %v", err)
+	}
+
+	// Read and verify chain.
+	src := auditPath()
+	events, err := audit.ReadFile(src)
+	if err != nil {
+		die("read audit: %v", err)
+	}
+	chainOK := true
+	if verifyErr := audit.VerifyEvents(events); verifyErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: chain verification failed: %v\n", verifyErr)
+		chainOK = false
+	}
+
+	// Copy audit.jsonl to outdir.
+	destLog := filepath.Join(outdir, "audit.jsonl")
+	if err := copyFile(src, destLog); err != nil {
+		die("copy audit log: %v", err)
+	}
+
+	// Determine first/last seq.
+	var firstSeq, lastSeq int64
+	if len(events) > 0 {
+		firstSeq = events[0].Seq
+		lastSeq = events[len(events)-1].Seq
+	}
+
+	// Write manifest.
+	manifest := map[string]any{
+		"export_ts":   time.Now().UTC().Format(time.RFC3339),
+		"event_count": len(events),
+		"first_seq":   firstSeq,
+		"last_seq":    lastSeq,
+		"chain_ok":    chainOK,
+		"source":      src,
+		"actor":       callerContext().ActorID,
+	}
+	manifestPath := filepath.Join(outdir, "manifest.json")
+	mdata, _ := json.MarshalIndent(manifest, "", "  ")
+	if err := os.WriteFile(manifestPath, append(mdata, '\n'), 0o640); err != nil {
+		die("write manifest: %v", err)
+	}
+
+	fmt.Printf("exported %d events → %s\n", len(events), outdir)
+	fmt.Printf("  %s\n", destLog)
+	fmt.Printf("  %s  (chain_ok=%v)\n", manifestPath, chainOK)
+	if !chainOK {
+		os.Exit(3)
+	}
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Empty log is OK — create empty file.
+			return os.WriteFile(dst, nil, 0o640)
+		}
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
 }
 
 // callerContext builds a verb.Context from env vars.
