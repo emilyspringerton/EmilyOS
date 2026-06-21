@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"emilyos/internal/audit"
@@ -240,6 +241,14 @@ func runAudit(args []string) {
 			die("audit export: <outdir> required")
 		}
 		runAuditExport(args[1])
+	case "history":
+		n := 20
+		if len(args) >= 2 {
+			if v, err := strconv.Atoi(args[1]); err == nil && v > 0 {
+				n = v
+			}
+		}
+		runAuditHistory(n)
 	default:
 		die("unknown audit subcommand: %s", args[0])
 	}
@@ -317,6 +326,52 @@ func copyFile(src, dst string) error {
 	defer out.Close()
 	_, err = io.Copy(out, in)
 	return err
+}
+
+// runAuditHistory prints the last N posture.set events from the audit log.
+func runAuditHistory(n int) {
+	events, err := audit.ReadFile(auditPath())
+	if err != nil {
+		die("read audit: %v", err)
+	}
+
+	type row struct {
+		Seq    int64
+		TS     string
+		Actor  string
+		From   string
+		To     string
+	}
+
+	var rows []row
+	for _, e := range events {
+		if e.Verb != "posture.set" {
+			continue
+		}
+		from, _ := e.Meta["from"].(string)
+		to, _ := e.Meta["to"].(string)
+		rows = append(rows, row{
+			Seq:   e.Seq,
+			TS:    e.TS.Format("2006-01-02 15:04:05"),
+			Actor: e.ActorID,
+			From:  from,
+			To:    to,
+		})
+	}
+
+	if len(rows) == 0 {
+		fmt.Println("no posture transitions recorded")
+		return
+	}
+	if len(rows) > n {
+		rows = rows[len(rows)-n:]
+	}
+
+	fmt.Printf("%-6s  %-19s  %-16s  %s\n", "Seq", "Timestamp", "Actor", "Transition")
+	fmt.Println(strings.Repeat("─", 65))
+	for _, r := range rows {
+		fmt.Printf("%-6d  %-19s  %-16s  %s → %s\n", r.Seq, r.TS, r.Actor, r.From, r.To)
+	}
 }
 
 // callerContext builds a verb.Context from env vars.
