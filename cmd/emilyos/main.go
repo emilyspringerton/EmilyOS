@@ -37,6 +37,12 @@ import (
 
 var version = "dev"
 
+// Build attestation — injected at build time via -ldflags:
+//   -X main.buildCommit=$(git rev-parse --short HEAD)
+//   -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+var buildCommit = "unknown"
+var buildDate = "unknown"
+
 func main() {
 	flag.Usage = usage
 	versionFlag := flag.Bool("version", false, "print version and exit")
@@ -48,7 +54,7 @@ func main() {
 	}
 
 	args := flag.Args()
-	if len(args) < 2 {
+	if len(args) == 0 {
 		usage()
 		os.Exit(1)
 	}
@@ -60,6 +66,10 @@ func main() {
 		runVerb(args[1:])
 	case "audit":
 		runAudit(args[1:])
+	case "about":
+		runAbout()
+	case "snapshot":
+		runSnapshot(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", args[0])
 		usage()
@@ -374,6 +384,98 @@ func runAuditHistory(n int) {
 	}
 }
 
+// runAbout prints build attestation and current policy state.
+func runAbout() {
+	fmt.Printf("emilyos %s\n", version)
+	fmt.Printf("  commit:  %s\n", buildCommit)
+	fmt.Printf("  built:   %s\n", buildDate)
+	pm, _ := posture.New(posturePath())
+	if pm != nil {
+		fmt.Printf("  posture: %s\n", pm.Current())
+	}
+
+	ss, _ := policy.NewSnapshotStore(snapshotPath())
+	if latest, _ := ss.Latest(); latest != nil {
+		fmt.Printf("  policy:  snapshot %s (%s)\n", latest.SnapshotID, latest.CreatedAt.Format("2006-01-02 15:04:05 UTC"))
+	} else {
+		fmt.Printf("  policy:  no snapshot on disk\n")
+	}
+}
+
+// runSnapshot handles snapshot management subcommands.
+// Usage: emilyos snapshot capture
+//        emilyos snapshot list
+//        emilyos snapshot show <id>
+func runSnapshot(args []string) {
+	if len(args) == 0 {
+		die("usage: emilyos snapshot capture|list|show <id>")
+	}
+	ss, err := policy.NewSnapshotStore(snapshotPath())
+	if err != nil {
+		die("snapshot store: %v", err)
+	}
+	switch args[0] {
+	case "capture":
+		ctx := callerContext()
+		var prevID string
+		if latest, _ := ss.Latest(); latest != nil {
+			prevID = latest.SnapshotID
+		}
+		snap := &policy.Snapshot{
+			SnapshotID:     policy.NewSnapshotID(),
+			CreatedAt:      time.Now().UTC(),
+			ActorID:        ctx.ActorID,
+			GitCommit:      buildCommit,
+			BuildID:        version + "+" + buildDate,
+			PrevSnapshotID: prevID,
+			Roles:          capturePolicyRoles(),
+		}
+		if err := ss.Write(snap); err != nil {
+			die("write snapshot: %v", err)
+		}
+		fmt.Printf("snapshot captured: %s (hash=%s)\n", snap.SnapshotID, snap.Hash[:16])
+	case "list":
+		entries, err := os.ReadDir(snapshotPath())
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Println("no snapshots yet")
+				return
+			}
+			die("list: %v", err)
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				fmt.Println(e.Name())
+			}
+		}
+	case "show":
+		if len(args) < 2 {
+			die("snapshot show: <id> required")
+		}
+		snap, err := ss.Get(args[1])
+		if err != nil {
+			die("get: %v", err)
+		}
+		data, _ := json.MarshalIndent(snap, "", "  ")
+		fmt.Println(string(data))
+	default:
+		die("unknown snapshot subcommand: %s", args[0])
+	}
+}
+
+func capturePolicyRoles() map[string]any {
+	out := make(map[string]any, len(policy.AllRoles()))
+	for _, role := range policy.AllRoles() {
+		caps := policy.CapsForRole(role)
+		list := make([]string, 0, len(caps))
+		for c := range caps {
+			list = append(list, c)
+		}
+		out[role] = list
+	}
+	return out
+}
+
 // callerContext builds a verb.Context from env vars.
 func callerContext() verb.Context {
 	actorID := getenvOr("EMILY_ACTOR_ID", os.Getenv("USER"))
@@ -398,8 +500,9 @@ func callerContext() verb.Context {
 	}
 }
 
-func posturePath() string { return getenvOr("EMILY_POSTURE_PATH", "var/posture.json") }
-func auditPath() string   { return getenvOr("EMILY_AUDIT_PATH", "var/audit.jsonl") }
+func posturePath() string  { return getenvOr("EMILY_POSTURE_PATH", "var/posture.json") }
+func auditPath() string    { return getenvOr("EMILY_AUDIT_PATH", "var/audit.jsonl") }
+func snapshotPath() string { return getenvOr("EMILY_SNAPSHOT_DIR", "var/snapshots") }
 
 func getenvOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {

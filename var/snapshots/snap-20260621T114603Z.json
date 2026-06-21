@@ -1,0 +1,41 @@
+{
+  "snapshot_id": "snap-20260621T114603Z",
+  "created_at": "2026-06-21T11:46:03.29041236Z",
+  "actor_id": "fatbaby",
+  "build_id": "dev+unknown",
+  "git_commit": "unknown",
+  "prev_snapshot_id": "snap-20260621T114549Z",
+  "roles": {
+    "admin": [
+      "cap.policy.write",
+      "cap.exec",
+      "cap.ssh.manage_hosts",
+      "cap.export",
+      "cap.posture.set",
+      "cap.domain.start",
+      "cap.ssh.manage_keys",
+      "cap.posture.admin",
+      "cap.net",
+      "cap.ssh.connect",
+      "cap.audit.read",
+      "cap.session.open",
+      "cap.domain.stop"
+    ],
+    "auditor": [
+      "cap.audit.read",
+      "cap.export"
+    ],
+    "operator": [
+      "cap.posture.set",
+      "cap.exec",
+      "cap.net",
+      "cap.domain.start",
+      "cap.domain.stop",
+      "cap.ssh.connect",
+      "cap.session.open"
+    ]
+  },
+  "capabilities": null,
+  "posture_policy": null,
+  "hash": "sha256:cfdfa25cba55178d90f1b3f4af7e5f113f369ec91abe1ec86755a4093a7ff106"
+}

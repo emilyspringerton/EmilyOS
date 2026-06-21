@@ -27,58 +27,58 @@ SOC 2 is the frame that makes every design decision answerable: *does this make 
 ## Milestones
 
 ### Milestone 1 — Audit Foundation
-**Status:** `[ ] in progress`  
+**Status:** `[x] complete` — 2026-06-15  
 **Target:** Sprint 1 (2026-06-09 → 2026-06-16)
 
 **Acceptance Criteria:**
-- [ ] `internal/audit/log.go`: append-only JSONL log with hash chain
-- [ ] Event schema matches SOC 2 §2.2: `ts, actor_id, session_id, device_id, verb, object_ref, decision, reason_code, result, prev_hash`
-- [ ] Tamper detection: `VerifyChain()` returns error on modified event
-- [ ] `audit_test.go`: 100 events written → tamper event 50 → chain invalid detected
-- [ ] Log is append-only: no update/delete methods exist in the interface
+- [x] `internal/audit/log.go`: append-only JSONL log with hash chain
+- [x] Event schema matches SOC 2 §2.2: `ts, actor_id, session_id, device_id, verb, object_ref, decision, reason_code, result, prev_hash`
+- [x] Tamper detection: `VerifyChain()` returns error on modified event
+- [x] `audit_test.go`: 100 events written → tamper event 50 → chain invalid detected
+- [x] Log is append-only: no update/delete methods exist in the interface
 
 **Why this is first:** Nothing is trustworthy without an audit trail. Everything else is built on top of this.
 
 ---
 
 ### Milestone 2 — RBAC + Capability Gates
-**Status:** `[ ] queued`  
+**Status:** `[x] complete` — 2026-06-15  
 **Target:** Sprint 2
 
 **Acceptance Criteria:**
-- [ ] `internal/policy/rbac.go`: Operator / Admin / Auditor roles with fixed capability sets
-- [ ] Capabilities: `cap.net`, `cap.exec`, `cap.policy.write`, `cap.audit.read`, `cap.export`, `cap.ssh.connect`, `cap.domain.start`, `cap.domain.stop`
-- [ ] `internal/verb/dispatch.go`: every verb checks capability before executing
-- [ ] Denied actions emit `decision=deny + reason_code` audit event
-- [ ] Auditor role: can read audit logs, cannot execute any verb that mutates state
-- [ ] Test: Auditor session denied on `cap.exec` attempt; audit event written
+- [x] `internal/policy/rbac.go`: Operator / Admin / Auditor roles with fixed capability sets
+- [x] Capabilities: `cap.net`, `cap.exec`, `cap.policy.write`, `cap.audit.read`, `cap.export`, `cap.ssh.connect`, `cap.domain.start`, `cap.domain.stop`
+- [x] `internal/verb/dispatch.go`: every verb checks capability before executing
+- [x] Denied actions emit `decision=deny + reason_code` audit event
+- [x] Auditor role: can read audit logs, cannot execute any verb that mutates state
+- [x] Test: Auditor session denied on `cap.exec` attempt; audit event written
 
 **Why this is second:** Capability gates without audit logs are silent. Audit logs without capability gates are incomplete.
 
 ---
 
 ### Milestone 3 — Posture State Machine
-**Status:** `[ ] queued`  
+**Status:** `[x] complete` — 2026-06-15  
 **Target:** Sprint 3
 
 **Acceptance Criteria:**
-- [ ] `internal/posture/machine.go`: NORMAL / SIEGE / MERCY / INCIDENT / GAME states
-- [ ] Posture transition rules enforced (see `docs/POSTURE.md`)
-- [ ] Each posture has a capability override mask
+- [x] `internal/posture/machine.go`: NORMAL / SIEGE / MERCY / INCIDENT / GAME / EXITED states
+- [x] Posture transition rules enforced (see `docs/POSTURE.md`)
+- [x] Each posture has a capability override mask
   - SIEGE: `cap.net = OFF` (hard gate regardless of role)
   - MERCY: `cap.exec` only allows pinned domains
   - INCIDENT: `cap.exec = DENY`, `cap.export = ALLOW`
   - GAME: `cap.net = OFF`, `cap.domain.start = DENY` except game domain
-- [ ] Posture transitions are audited (actor, old_posture, new_posture)
-- [ ] Posture persists across restarts via `var/posture.json`
-- [ ] Test: SIEGE mode rejects `cap.net` capability even for Admin role
+- [x] Posture transitions are audited (actor, old_posture, new_posture) — via log.Allow with from/to meta
+- [x] Posture persists across restarts via `var/posture.json`
+- [x] Test: SIEGE mode rejects `cap.net` capability even for Admin role (TestCapabilityVerdict_SiegeDeniesNet)
 
 **Why this is third:** RBAC tells you who can do what. Posture tells you what the system allows right now.
 
 ---
 
 ### Milestone 4 — Policy Snapshots
-**Status:** `[ ] queued`  
+**Status:** `[ ] in progress` — partial implementation 2026-06-21  
 **Target:** Sprint 4
 
 **Acceptance Criteria:**
@@ -92,12 +92,12 @@ SOC 2 is the frame that makes every design decision answerable: *does this make 
 ---
 
 ### Milestone 5 — Evidence Export
-**Status:** `[ ] queued`  
+**Status:** `[ ] in progress` — `emilyos audit export` implemented 2026-06-21 (Apple #2335)  
 **Target:** Sprint 5
 
 **Acceptance Criteria:**
 - [ ] `EXPORT_EVIDENCE` verb (requires `cap.export`)
-- [ ] Bundle contains: last 90 days audit log segment, current policy snapshot + hash, build attestation
+- [x] `emilyos audit export <outdir>` produces `audit.jsonl` + `manifest.json` (S47-03)
 - [ ] Bundle is a `.tar.gz` with a `manifest.json` listing all files + their SHA-256 hashes
 - [ ] `manifest.json` is signed if `EMILY_SIGNING_KEY` is present
 - [ ] Export event is itself audited
