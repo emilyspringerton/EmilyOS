@@ -1,3 +1,7 @@
+## 2026-06-25
+
+- feat(ci): GitHub Actions CI workflow — test, static build (GOWORK=off), construct bundle
+
 ## 2026-06-21
 - feat: S54-02 EXPORT_EVIDENCE verb audit + TestBundleManifestVerification (Milestone 5 complete) (Apple #2372)
 - feat: S54-01 POLICY_ROLLBACK verb + TestSnapshotRollback (Milestone 4 complete) (Apple #2370)
