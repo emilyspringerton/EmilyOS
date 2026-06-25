@@ -1,0 +1,102 @@
+name: EmilyOS CI
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: emilyos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test_build_construct:
+    name: 🏛️ Test, Build & Construct
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    env:
+      GOWORK: "off"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Go Tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          GOWORK=off go test ./...
+
+      - name: Build emilyos binary (static)
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.1.0-ci")
+          GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -trimpath \
+            -ldflags="-s -w -X main.Version=${VERSION}" \
+            -o dist/emilyos \
+            ./cmd/emilyos
+          echo "Built: $(./dist/emilyos --version 2>&1 || true)"
+
+      - name: Generate Construct Bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="EMILYOS_CONSTRUCT.txt"
+          {
+            echo "EMILYOS CONSTRUCT ${{ github.run_number }}"
+            echo "commit: $GITHUB_SHA"
+            echo "generated_utc: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo
+          } > "$OUT"
+
+          while IFS= read -r relpath; do
+            {
+              echo "--- FILE START: ${relpath} ---"
+              cat "${relpath}"
+              echo
+              echo "--- FILE END: ${relpath} ---"
+              echo
+            } >> "$OUT"
+          done < <(
+            find . \
+              \( \
+                -path './.git' \
+                -o -path './vendor' \
+                -o -path './dist' \
+                -o -path './build' \
+                -o -path './artifacts' \
+                -o -path './var' \
+                -o -path './tmp' \
+              \) -prune -o \
+              -type f \
+              \( \
+                -name '*.go' -o -name '*.mod' -o -name '*.sum' -o \
+                -name '*.md' -o -name '*.txt' -o -name '*.sh' -o \
+                -name '*.yaml' -o -name '*.yml' -o -name '*.toml' -o \
+                -name 'Makefile' -o -name 'Dockerfile' -o -name '.gitignore' \
+              \) \
+              ! -name "$OUT" \
+              -print | sed 's#^./##' | LC_ALL=C sort
+          )
+
+          test -s "$OUT"
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: emilyos-${{ github.run_number }}-${{ github.sha }}
+          path: |
+            dist/emilyos
+            EMILYOS_CONSTRUCT.txt
+          if-no-files-found: error
