@@ -45,3 +45,7 @@ go build ./cmd/emilyos
 - `github.com/emilyspringerton/EMILY` — Emily Prime agent (RSI loop, cron, Apples)
 - `github.com/emilyspringerton/IDUNA` — IAM + Apples store
 - `github.com/emilyspringerton/MJOLNIR` — Android intelligence terminal
+
+## Commit Protocol (standing instruction)
+
+Always commit and push completed work immediately — don't wait to be asked. This is the default for every repo in this monorepo.
