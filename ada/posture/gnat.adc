@@ -1,0 +1,17 @@
+--  Configuration pragmas for the whole Posture partition.
+--
+--  pragma Profile (Ravenscar) is a partition-wide configuration pragma
+--  (not a per-package one) -- it belongs in gnat.adc, picked up
+--  automatically by gprbuild/gnatmake when building from this
+--  directory, per standard GNAT convention. It restricts tasking to the
+--  Ravenscar-compliant subset (no dynamic task creation, no
+--  Select/Abort, Ceiling_Locking for protected objects, etc.) -- this
+--  module has no `task` declarations at all, only the one `protected`
+--  object in Posture.Machine, which the profile fully supports.
+pragma Profile (Ravenscar);
+
+--  Ravenscar requires an explicit ceiling priority policy; GNAT infers a
+--  correct default for a protected object with no tasks calling it at
+--  differing priorities, but stating it explicitly here documents the
+--  choice rather than leaving it implicit.
+pragma Locking_Policy (Ceiling_Locking);

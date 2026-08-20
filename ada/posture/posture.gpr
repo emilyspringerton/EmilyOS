@@ -1,0 +1,24 @@
+--  GNAT project file for the Posture module + its selftest.
+--
+--  Native runtime (no --RTS=ravenscar-sfp / cross-target): gnat.adc's
+--  `pragma Profile (Ravenscar)` still enforces the Ravenscar legality
+--  restrictions at compile time regardless -- that's a language-subset
+--  check, not something that requires a bare-metal runtime to verify.
+--  This module targets "runs as a demonstrable, restriction-checked
+--  module on this box," not an embedded deployment target; a
+--  cross-build to a real embedded Ravenscar runtime would be a
+--  follow-on, not this pass.
+--
+--  Build: gprbuild -P posture.gpr
+--  Run:   ./obj/posture_selftest
+project Posture is
+
+   for Source_Dirs use (".");
+   for Object_Dir use "obj";
+   for Main use ("posture_selftest.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnatwa", "-gnatVa");
+   end Compiler;
+
+end Posture;
