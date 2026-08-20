@@ -1,3 +1,7 @@
+## 2026-08-20
+
+- Added ada/posture, a Ravenscar-profile Ada port of the posture state machine's pure decision logic -- unverified, blocked on installing GNAT (queued in sudo-queue) (sess-20260813-2154-dda37e8b)
+
 ## 2026-06-25
 
 - feat(ci): GitHub Actions CI workflow — test, static build (GOWORK=off), construct bundle
