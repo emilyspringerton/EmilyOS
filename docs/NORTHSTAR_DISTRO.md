@@ -51,9 +51,19 @@ a stronger claim than attesting to one service's).
    design philosophy (KISS — Keep It Simple, minimal defaults, the user builds up from a bare
    base) is already aligned with this ask, not something to fight against or layer on top of.
 3. **Named included-by-default set, real and specific**: PARENA ("build parena in"), vim ("and
-   vim"), the `emily` CLI ("and emily cli"). Everything else is deliberately out unless it's
-   load-bearing GNU infra (point 1) or the base Arch install genuinely requires it to boot/network/
-   authenticate.
+   vim"), the `emily` CLI ("and emily cli"), SSH ("and ssh" — matches PITVIPER's own established
+   "i am always in ssh" philosophy, the default persistent mode this whole ecosystem already
+   assumes, not a new idea), systemd ("systemd" — already EmilyOS's own stated stack for domain
+   lifecycle management, and Arch's own real default init system anyway, not an addition so much
+   as a confirmation), and the compiler toolchain both of those actually need — GCC ("build in gcc") and GNAT/Ada ("build in ada and gnat"). The Ada requirement isn't
+   arbitrary: `EmilyOS/ada/posture/` already has a real, existing Ada implementation of the
+   posture state machine (`posture-machine.adb`/`.ads`, `posture_selftest.adb`) — a deliberate
+   language choice for a SOC 2/policy-kernel context (Ada's own real track record in
+   high-assurance/safety-critical systems), and GNAT (GCC's Ada frontend, already installable via
+   `sudo-queue/17-install-gnat.sh` on this dev box) is what compiles it. GCC itself is also what
+   PARENA's own C-emission target ultimately compiles down to. Everything else is deliberately
+   out unless it's load-bearing GNU infra (point 1) or the base Arch install genuinely requires it
+   to boot/network/authenticate.
 
 ## Real open questions — not decided here, need a founder call or a real scoping pass
 
