@@ -1,3 +1,7 @@
+## 2026-08-25
+
+- feat(fs): GRANT_FS/REVOKE_FS verbs -- real filesystem ACL grants as PARENA-authored mods (internal/fsacl + internal/fsaclmod, stdlib/emilyos/fsacl.prn), replacing sudo-queue/22 hand-run setfacl with capability-checked (cap.fs.grant/cap.fs.revoke, Admin-only), audited, standing-denylist-protected policy. Live round-trip tested through the real compiled PARENA mod, not just compile-checked. See EMILY/BACKLOG.md for the full writeup.
+
 ## 2026-08-20
 
 - Added ada/posture, a Ravenscar-profile Ada port of the posture state machine's pure decision logic -- unverified, blocked on installing GNAT (queued in sudo-queue) (sess-20260813-2154-dda37e8b)

@@ -33,6 +33,8 @@ const (
 	CapPolicyWrite    = "cap.policy.write"
 	CapAuditRead      = "cap.audit.read"
 	CapExport         = "cap.export"
+	CapFsGrant        = "cap.fs.grant"  // GRANT_FS -- the identity-override extension point this file's own header comment reserves
+	CapFsRevoke       = "cap.fs.revoke" // REVOKE_FS
 )
 
 // roleCaps defines the fixed capability set for each role.
@@ -60,6 +62,8 @@ var roleCaps = map[string]map[string]bool{
 		CapPolicyWrite:    true,
 		CapAuditRead:      true,
 		CapExport:         true,
+		CapFsGrant:        true,
+		CapFsRevoke:       true,
 	},
 	RoleAuditor: {
 		CapAuditRead: true,

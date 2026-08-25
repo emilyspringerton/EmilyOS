@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"emilyos/internal/audit"
+	"emilyos/internal/fsaclmod"
 	"emilyos/internal/policy"
 	"emilyos/internal/posture"
 	"emilyos/internal/verb"
@@ -42,8 +43,9 @@ import (
 var version = "dev"
 
 // Build attestation — injected at build time via -ldflags:
-//   -X main.buildCommit=$(git rev-parse --short HEAD)
-//   -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+//
+//	-X main.buildCommit=$(git rev-parse --short HEAD)
+//	-X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 var buildCommit = "unknown"
 var buildDate = "unknown"
 
@@ -74,6 +76,8 @@ func main() {
 		runAbout()
 	case "snapshot":
 		runSnapshot(args[1:])
+	case "fs":
+		runFs(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", args[0])
 		usage()
@@ -474,11 +478,11 @@ func runAuditHistory(n int) {
 	}
 
 	type row struct {
-		Seq    int64
-		TS     string
-		Actor  string
-		From   string
-		To     string
+		Seq   int64
+		TS    string
+		Actor string
+		From  string
+		To    string
 	}
 
 	var rows []row
@@ -532,8 +536,9 @@ func runAbout() {
 
 // runSnapshot handles snapshot management subcommands.
 // Usage: emilyos snapshot capture
-//        emilyos snapshot list
-//        emilyos snapshot show <id>
+//
+//	emilyos snapshot list
+//	emilyos snapshot show <id>
 func runSnapshot(args []string) {
 	if len(args) == 0 {
 		die("usage: emilyos snapshot capture|list|show <id>")
@@ -598,6 +603,101 @@ func runSnapshot(args []string) {
 
 // runSnapshotRollback dispatches the POLICY_ROLLBACK verb, verifies the target snapshot hash,
 // and emits a SOC 2 audit event recording the rollback decision.
+// runFs dispatches GRANT_FS/REVOKE_FS -- EmilyOS's real filesystem ACL
+// verbs, replacing sudo-queue/22's hand-run setfacl invocations with
+// declared, capability-checked, audited policy. Founder real-time,
+// 2026-08-25: "do more work on the EmilyOS GRANT-FS REVOKE-FS with
+// parena mods for arch linux" -- the actual grant/revoke call goes
+// through internal/fsaclmod, a real PARENA-compiled mod (same S192-01
+// shape PITVIPER's scrollmod established), not a direct Go call.
+func runFs(args []string) {
+	if len(args) < 3 {
+		die("fs %s: <identity> <path> required", firstOr(args, "?"))
+	}
+	sub, identity, path := args[0], args[1], args[2]
+
+	log, err := audit.Open(auditPath())
+	if err != nil {
+		die("audit log: %v", err)
+	}
+	defer log.Close()
+	pm, err := posture.New(posturePath())
+	if err != nil {
+		die("posture: %v", err)
+	}
+	ss, err := policy.NewSnapshotStore(snapshotPath())
+	if err != nil {
+		die("snapshot store: %v", err)
+	}
+
+	d := verb.New(log, pm)
+	var verbName, capName string
+	var action func(identity, path string) error
+	switch sub {
+	case "grant":
+		verbName, capName, action = "GRANT_FS", policy.CapFsGrant, fsaclmod.TriggerGrant
+	case "revoke":
+		verbName, capName, action = "REVOKE_FS", policy.CapFsRevoke, fsaclmod.TriggerRevoke
+	default:
+		die("unknown fs subcommand: %s (want grant|revoke)", sub)
+	}
+
+	d.Register(verbName, capName, func(ctx verb.Context, objectRef string, meta map[string]any) error {
+		return action(identity, path)
+	})
+
+	ctx := callerContext()
+	dispErr := d.Dispatch(ctx, verbName, "fs:"+path, map[string]any{
+		"identity":   identity,
+		"path":       path,
+		"actor_role": ctx.Role,
+	})
+	if verb.IsDenied(dispErr) {
+		die("%s denied: %v", verbName, dispErr)
+	}
+	if dispErr != nil {
+		die("%s error: %v", verbName, dispErr)
+	}
+
+	// Record the change as a policy snapshot, same as POLICY_ROLLBACK's own
+	// pattern -- the audit event is the append-only trail of every attempt;
+	// the snapshot is the current declared state a future "what should be
+	// true" query can read without re-deriving it from a live getfacl walk.
+	var prevID string
+	if latest, _ := ss.Latest(); latest != nil {
+		prevID = latest.SnapshotID
+	}
+	snap := &policy.Snapshot{
+		SnapshotID:     policy.NewSnapshotID(),
+		CreatedAt:      time.Now().UTC(),
+		ActorID:        ctx.ActorID,
+		GitCommit:      buildCommit,
+		BuildID:        version + "+" + buildDate,
+		PrevSnapshotID: prevID,
+		Capabilities: map[string]any{
+			"verb":     verbName,
+			"identity": identity,
+			"path":     path,
+		},
+	}
+	if err := ss.Write(snap); err != nil {
+		die("write snapshot: %v", err)
+	}
+
+	fmt.Printf("%s dispatched.\n", verbName)
+	fmt.Printf("  identity: %s\n", identity)
+	fmt.Printf("  path:     %s\n", path)
+	fmt.Printf("  actor:    %s (%s)\n", ctx.ActorID, ctx.Role)
+	fmt.Printf("  snapshot: %s (hash=%s)\n", snap.SnapshotID, snap.Hash[:16])
+}
+
+func firstOr(args []string, def string) string {
+	if len(args) == 0 {
+		return def
+	}
+	return args[0]
+}
+
 func runSnapshotRollback(ss *policy.SnapshotStore, targetID string) {
 	// Load and hash-verify the target snapshot.
 	snap, err := ss.Get(targetID)
