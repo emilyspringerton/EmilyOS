@@ -1,3 +1,7 @@
+## 2026-08-26
+
+- README.md rewritten to reflect the real Go policy kernel (was a stale disconnected GUI v0.1 design doc); old content archived to docs/legacy-archive/gui-v0.1-design-capture.md (sess-20260825-1938-f6bd411e)
+
 ## 2026-08-25
 
 - feat(fs): GRANT_FS/REVOKE_FS verbs -- real filesystem ACL grants as PARENA-authored mods (internal/fsacl + internal/fsaclmod, stdlib/emilyos/fsacl.prn), replacing sudo-queue/22 hand-run setfacl with capability-checked (cap.fs.grant/cap.fs.revoke, Admin-only), audited, standing-denylist-protected policy. Live round-trip tested through the real compiled PARENA mod, not just compile-checked. See EMILY/BACKLOG.md for the full writeup.
