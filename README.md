@@ -1,241 +1,106 @@
-EmilyOS 2 GUI v0.1 — Game-UI Filesystem
-Core premise
-
-The game interface is the filesystem UI.
-
-Interaction is intent-declared (no single-click actions).
-
-Visual language is hard-coded palette + hard-coded affordance types.
-
-1) Visual system
-1.1 Background + whitespace rules
-
-Background: deep navy/near-black (no pure black required, but close).
-
-Directories: the only use of “white-ish” is EGSHELL (directory tiles / directory labels / directory frames).
-
-No other whites anywhere else (no white buttons, no white highlights).
-
-1.2 Tile types
-
-Two primary tile classes:
-
-A) Directory tiles (EGSHELL / white-ish)
-
-Must read as “container / safe / navigational.”
-
-Any frame/border for directories also uses EGSHELL.
-
-B) Button tiles (colored)
-
-Must be darker than EGSHELL always.
-
-Colors allowed: blue, magenta, teal, light teal, dark teal, red, yellow, green
-(You also said “all HTML colors like olive excluding white”—so the rule is: allow a standard HTML color set, but ban white & near-white; enforce luminance cap.)
-
-1.3 Typography
-
-Labels mimic the WINNER text aesthetic from the mockup:
-
-blocky, geometric, high legibility
-
-all-caps by default (or small caps look)
-
-Directory labels: EGSHELL or slightly dimmer EGSHELL.
-
-Button labels: high-contrast vs button fill, but never pure white.
-
-1.4 Visual feedback
-
-Hover effects are allowed only as focus outlines, not “clickable hover glow.”
-
-Focus outline color:
-
-For directories: EGSHELL outline
-
-For buttons: a slightly brighter tint of the button’s own color
-
-No animations that imply “aliveness.” If anything animates, it must be:
-
-single-shot (e.g., a brief flash on activation)
-
-no looping pulses
-
-2) Layout model: tmux × i3 hybrid
-2.1 Screen is a tiling space
-
-The UI is composed of panes (rectangles) like tmux/i3.
-
-Panes can contain:
-
-a directory view (grid of tiles)
-
-a file view (grid of tiles)
-
-a “process/log” panel (optional)
-
-a “command line / verb bar” panel (optional)
-
-2.2 Pane operations (keyboard-first)
-
-Create/split panes:
-
-vertical split
-
-horizontal split
-
-Move focus between panes
-
-Resize pane boundaries
-
-Close pane (non-destructive; doesn’t delete data)
-
-2.3 No freeform dragging by default
-
-Dragging is optional, but if included:
-
-it must be a deliberate verb (“MOVE MODE”) not casual click-drag.
-
-3) Interaction contract
-3.1 No single-click affordances
-
-Single click never triggers actions.
-Single click only does:
-
-focus tile
-
-select tile (highlight)
-
-prime for double click
-
-3.2 Double click semantics (two speeds)
-
-You defined two double-click flavors:
-
-Fast double click = ACTIVATE
-
-activates the tile’s primary action (button press / open directory / open file)
-
-uses the tile’s “associated action”
-
-Slow double click = EDIT LABEL
-
-enters label editing mode (inline rename)
-
-applies to both files and directories (unless tile is “system-locked”)
-
-3.3 Timing thresholds (implementable)
-
-Pick deterministic timing (example values—tune later, but lock shape now):
-
-DC_FAST_MAX = 220ms between clicks
-
-DC_SLOW_MIN = 350ms and DC_SLOW_MAX = 800ms
-
-Anything between 221–349ms: treat as fast (or require a “dead zone” if you want strictness)
-
-Important: fast and slow are mutually exclusive and must not misfire.
-
-3.4 Editing mode behavior
-
-When in label-edit mode:
-
-keystrokes edit the label
-
-ENTER commits
-
-ESC cancels
-
-clicking outside does not commit; it cancels (safer / less accidental)
-
-No background autosave while typing; commit is explicit.
-
-4) Filesystem mapping to tiles
-4.1 Tile representations
-
-Every file/dir is a tile with:
-
-type (dir/file/button/system)
-
-label
-
-color (from palette rules)
-
-action (primary)
-
-meta (size, time, hash) optionally hidden behind an info verb
-
-4.2 Directories
-
-Directory tiles (EGSHELL) open into a directory pane view.
-
-Directory panes display:
-
-child tiles (dirs first, then files)
-
-stable ordering (no jitter)
-
-optional filter/search is allowed but must be a verb, not auto
-
-4.3 Files as buttons
-
-“File tiles” are button-like colored squares (unless you explicitly want files visually distinct from buttons; if you do, add a small corner glyph)
-
-Fast double click:
-
-if file is executable → run (inside its domain/posture rules)
-
-if file is data → open viewer pane (read-only by default)
-
-Slow double click:
-
-rename file (unless locked)
-
-5) Safety + policy hooks (EmilyOS posture compatibility)
-5.1 Postures affect available actions, not the visuals
-
-Under SIEGE/MERCY:
-
-tiles remain visible
-
-activation may be denied with a minimal feedback (see below)
-
-5.2 Denial feedback (non-alive, non-chatty)
-
-When an action is denied:
-
-one-frame “deny flash” on the tile border (e.g., dim red outline)
-
-no modal dialogs
-
-no toast notifications
-
-optional: a quiet status line update in a dedicated pane (single line)
-
-6) Keyboard navigation (must exist)
-
-Even if mouse exists, keyboard is first-class:
-
-Arrow keys / WASD moves selection within the grid
-
-TAB cycles panes
-
-ENTER is equivalent to fast double click on the focused tile
-
-F2 (or R) enters rename (equivalent to slow double click)
-
-ESC backs out / cancels / returns to stillness depending on context
-
-7) What’s intentionally missing (v0 scope control)
-
-No single-click actions
-
-No drag-drop unless explicitly invoked as a verb
-
-No animated UI chrome
-
-No freeform window stacking (tiling only)
-
-No popups/modals
-
-If you want the next step, I can convert this into a concrete event/state spec (mouse events → interpreter → verb dispatch), including an unambiguous “double-click classifier” pseudocode so it behaves exactly the same across Windows/Linux/SDL.
+# EmilyOS — Policy Kernel
+
+EmilyOS is **not** a bare-metal OS. It is a Go *policy kernel* that runs on Linux and enforces
+posture-gated sessions, capability-checked agency verbs, and tamper-evident (hash-chained) audit
+logging — the SOC 2 Type II-readiness invariants described in `docs/NORTHSTAR.md`. The earlier
+bare-metal exokernel framing (and the tile-based "GUI v0.1" filesystem-browser design that used to
+live in this README) is superseded; see `docs/legacy-archive/` for that history.
+
+## Current direction (2026-08-25/26)
+
+Founder real-time: *"oh yea cool lets build our own installable distro"* → *"EmilyOS for real as
+arch linux"* → *"PARENA native as much as possible"* → *"we use gnu tools for the load bearing
+walls like grep"* → *"but the stuff we dont need leave it out"* → *"make it super small to start
+whatever can be left out leave it out"* → *"build parena in"* → *"and vim"* → *"and emily cli."*
+This is a scoping-only pivot toward a real, small, installable Arch-based Linux distro with
+EmilyOS's policy kernel as the base, PARENA as the native language wherever practical, GNU
+coreutils kept only where they're load-bearing (grep, etc.), and PARENA/vim/emily-cli built in.
+Not yet built — see `docs/NORTHSTAR_DISTRO.md` (Draft v0.1) for the full scoping doc. This does
+not change anything below; the policy kernel itself is unaffected by the pivot.
+
+## Build & run
+
+```sh
+make build          # dist/emilyos, ldflags-stamped with git commit + build date
+make build-static   # static linux/amd64 binary
+make test           # GOWORK=off go test ./...
+make verify          # build + test
+make deb             # .deb package
+```
+
+```sh
+./dist/emilyos --help
+```
+
+## CLI surface
+
+```
+emilyos posture get                    print current posture state
+emilyos posture set <state>            transition posture (admin only)
+emilyos verb dispatch <verb> <object>  dispatch a capability-checked verb
+emilyos audit tail [-n N]              print last N audit events (default 10)
+emilyos audit verify                   verify audit hash-chain integrity
+emilyos audit export / bundle / history
+emilyos snapshot capture|list|show <id>|rollback <id>   RBAC policy snapshots
+emilyos fs grant <identity> <path>     grant filesystem ACL access (see below)
+emilyos fs revoke <identity> <path>    revoke filesystem ACL access
+emilyos about                          version / build attestation
+```
+
+Environment: `EMILY_ACTOR_ID`, `EMILY_SESSION_ID`, `EMILY_DEVICE_ID`, `EMILY_ROLE`
+(operator|admin|auditor), `EMILY_POSTURE_PATH`, `EMILY_AUDIT_PATH`.
+
+## Key concepts
+
+- **Posture**: the system's current operating mode — NORMAL / SIEGE / MERCY / INCIDENT / GAME.
+  Stored in `var/posture.json`. A Ravenscar Ada port of this state machine lives in `ada/posture/`.
+- **Verb**: a declared intent (ENTER / PAUSE / RESUME / WITHDRAW / EXIT / GAME / EXEC /
+  DOMAIN_EXEC / NET / SSH / INCIDENT / EXPORT / POLICY_CHANGE / AUDIT_READ / DOMAIN_START /
+  DOMAIN_STOP / SSH_MANAGE_HOSTS / SSH_MANAGE_KEYS / GRANT_FS / REVOKE_FS). Every verb is
+  capability-checked and audited.
+- **Capability**: a named permission (e.g. `cap.net`, `cap.exec`, `cap.policy.write`). Granted to
+  roles; roles assigned to identities.
+- **Audit event**: an immutable, hash-chained record. Every verb call emits one — `internal/audit/`.
+- **Policy snapshot**: a hash-addressed JSON file capturing current RBAC config, written on every
+  policy change — `internal/policy/`.
+
+## GRANT_FS / REVOKE_FS — real filesystem ACLs (2026-08-25)
+
+`emilyos fs grant <identity> <path>` / `emilyos fs revoke <identity> <path>` dispatch the
+`GRANT_FS`/`REVOKE_FS` verbs, which are capability-checked, posture-gated, and audited like any
+other verb — replacing hand-run `setfacl` invocations (e.g. `sudo-queue/22-create-treeiii-user.sh`)
+with declared policy. The actual ACL mutation goes through `internal/fsaclmod`, a real
+PARENA-compiled mod — the same "mod is the trigger, host Go/C does the real work" shape PITVIPER's
+`scrollmod` established (S192-01). This is EmilyOS's first real PARENA integration point.
+
+## Directory layout
+
+```
+cmd/emilyos/        -- entry point, CLI dispatch
+internal/audit/     -- hash-chained append-only audit log
+internal/policy/    -- RBAC roles + capability gates + policy snapshots
+internal/posture/   -- posture state machine
+internal/verb/      -- verb dispatcher
+internal/fsacl/     -- filesystem ACL policy types
+internal/fsaclmod/  -- PARENA-compiled mod driving the real setfacl-equivalent calls
+ada/posture/        -- Ravenscar Ada port of the posture state machine
+docs/               -- golden docs (NORTHSTAR, NORTHSTAR_DISTRO, ARCHITECTURE, SOC2, FS_ACL_COORDINATION, etc.)
+docs/legacy-archive/-- superseded design docs, kept for historical reference only
+var/                -- runtime state (gitignored except .gitkeep)
+```
+
+## Documentation
+
+- `docs/NORTHSTAR.md` — SOC 2 Type II readiness north star (written by Emily Prime, 2026-06-09)
+- `docs/NORTHSTAR_DISTRO.md` — Arch-Linux-distro pivot scoping doc (Draft v0.1, 2026-08-25)
+- `docs/ARCHITECTURE.md` — policy-kernel-on-Linux architecture (vs. the superseded bare-metal design)
+- `docs/FS_ACL_COORDINATION.md` — GRANT_FS/REVOKE_FS design rationale
+- `docs/legacy-archive/` — superseded exokernel/GUI design docs; do not use for planning or implementation
+
+## Related repos
+
+- `EMILY` — Emily Prime agent (RSI loop, cron, Apples)
+- `IDUNA` — IAM + Apples store
+- `MJOLNIR` — Android intelligence terminal
+- `PITVIPER` — established the PARENA-mod integration shape (`scrollmod`) that `fsaclmod` follows
+- `PARENA` — the language `fsaclmod` is compiled from
