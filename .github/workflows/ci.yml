@@ -36,12 +36,31 @@ jobs:
           set -euo pipefail
           GOWORK=off go test ./...
 
-      - name: Build emilyos binary (static)
+      # Real, confirmed-live CI break (2026-08-28): CGO_ENABLED=0 here predates
+      # internal/fsaclmod (EmilyOS's second real PARENA-authored mod, GRANT_FS/REVOKE_FS,
+      # commit eb6b867) -- fsaclmod is a real cgo package (`import "C"`, links the
+      # PARENA-compiled fsacl mod directly), so under CGO_ENABLED=0 its own build
+      # constraints exclude every file in the package ("build constraints exclude all Go
+      # files in .../internal/fsaclmod"), and the build fails outright. `go test ./...`
+      # (the step just above, no CGO_ENABLED override) never caught this since it runs
+      # with cgo enabled by default.
+      #
+      # Fixed by enabling cgo here too, same real precedent PITVIPER's own CI already
+      # sets for its own cgo-based PARENA mod integration (CGO_ENABLED=1, no attempt at a
+      # genuinely static libc-free binary -- see that repo's own ci.yml comment on why:
+      # dynamically linking against the target's own libc is the real, accepted tradeoff,
+      # not a gap). EmilyOS's own CLAUDE.md already scopes this repo as "the policy kernel
+      # that runs ON Linux (Ubuntu 22.04 LTS or Debian 12 baseline)," not a from-scratch,
+      # dependency-free bootable image -- a dynamic libc dependency is guaranteed present
+      # on any real target this binary actually runs on, so "(static)" in this step's own
+      # name was already a stronger promise than the real deployment target needed; renamed
+      # to drop that now-inaccurate claim rather than leave it misleading.
+      - name: Build emilyos binary
         shell: bash
         run: |
           set -euo pipefail
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "0.1.0-ci")
-          GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+          GOWORK=off CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
             -trimpath \
             -ldflags="-s -w -X main.Version=${VERSION}" \
             -o dist/emilyos \
