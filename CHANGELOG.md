@@ -1,3 +1,7 @@
+## 2026-08-28
+
+- CI fix: enabled CGO for the emilyos build -- internal/fsaclmod (a real cgo-based PARENA mod added 2026-08-25) had been silently breaking the static build since. commit 2147f89. (sess-20260825-1938-f6bd411e)
+
 ## 2026-08-26
 
 - README.md rewritten to reflect the real Go policy kernel (was a stale disconnected GUI v0.1 design doc); old content archived to docs/legacy-archive/gui-v0.1-design-capture.md (sess-20260825-1938-f6bd411e)
