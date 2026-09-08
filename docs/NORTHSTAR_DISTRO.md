@@ -258,6 +258,39 @@ fixes against the actual init script and the actual rootfs contents, not guesses
 them here means the first real privileged run has a much better chance of producing something
 that actually boots, not just something that assembles cleanly.
 
+## Phase 3 attempted, real partial result — no visible boot console yet (2026-09-08, fourth same-day pass)
+
+Bootstrapped `qemu-system-aarch64` root-lessly the same way as everything else this session
+(`apt-get download` + `dpkg-deb -x`, real deps: `qemu-system-arm`/`-common`/`-data` plus
+`libbrlapi0.8`/`libcacard0`/`libfdt1`/`libpmem1`/`librdmacm1t64`/`libslirp0`/`liburing2`/
+`libusbredirparser1t64`/`libndctl6`/`libdaxctl1`, the last two found only by iterating real
+"cannot open shared object file" errors, not predicted up front). Confirmed a real, working
+binary (`qemu-system-aarch64 --version` runs clean) with real `raspi0`/`raspi1ap`/`raspi2b`/
+`raspi3ap`/`raspi3b` machine models available (this QEMU version — 8.2.2 — has no `raspi4b`).
+
+Booted the real `vmlinuz-rpi` + `initramfs-rpi` + `bcm2710-rpi-3-b.dtb` (all three already
+verified present and correct from the root-less build) under `-M raspi3b` with the corrected
+`root=`-bearing cmdline. **Real, partial, honest result**: no visible console output reached
+stdio across several real variants tried (`-serial stdio`, `-nographic`, `-serial mon:stdio`,
+with and without an explicit `earlycon=pl011,mmio32,0x3f215040` kernel argument) — but QEMU's own
+`-d guest_errors,unimp` debug log confirms the kernel IS actively executing and probing real
+hardware (35 real log lines: `bcm2835_property` mailbox tag requests, `bcm2836_control_write`
+register accesses, `dwc2_glbreg_write` USB controller reset attempts) — a genuine, live signal
+that the kernel+dtb pairing boots far enough to start real hardware initialization, not an
+immediate crash or hang at instruction zero. The most likely real explanation for the missing
+console text, not yet confirmed: Alpine's stock kernel may default its actual boot-time console
+to the framebuffer (matching the ORIGINAL stock `cmdline.txt`'s own `console=tty1`, a screen
+target, not a UART) rather than either RPi UART (`ttyAMA0`/PL011 typically routed to Bluetooth on
+real Pi 3 hardware, `ttyS0`/mini-UART routed to the GPIO header) — QEMU's raspi3b framebuffer
+emulation, if incomplete or requiring `-display` output this pass ran without (`-display none`
+throughout, to keep the test scriptable/headless), would produce exactly this "kernel clearly
+running, zero visible text" symptom. Real, honest, not-yet-closed follow-up, not silently
+dropped: confirm which console the kernel actually targets (check `/proc/cmdline`-equivalent
+defaults or `dmesg` once real console output IS achieved some way), and/or try a VNC/framebuffer
+display target instead of `-display none` to rule the framebuffer theory in or out.
+**Phase 3 stays open** — this pass improved confidence (real hardware-level execution confirmed)
+without yet producing the actual pass/fail boot signal Phase 3 exists to get.
+
 **Real phased plan from here**:
 - Phase 0 (this pass, done): placement decision, Alpine-for-Pi technical justification, real
   boot-artifact inventory, root-less rootfs-bootstrap proof and its real privilege boundary.
