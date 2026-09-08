@@ -84,22 +84,57 @@ cat > "$ROOTFS/etc/fstab" <<'EOF'
 /dev/mmcblk0p2  /      ext4  defaults  0  1
 EOF
 
-echo "== 3. build EmilyOS's own Go binary for linux/arm64, wire it in as a real OpenRC service =="
+echo "== 3. root-less aarch64 cross-toolchain bootstrap, then build EmilyOS's own Go binary for
+       linux/arm64 (cgo enabled — internal/fsaclmod is a genuine cgo package, see its own header
+       comment, no cgo-disabled fallback build tag; CGO_ENABLED=0 fails outright) =="
 mkdir -p "$ROOTFS/usr/local/bin" "$ROOTFS/var/lib/emilyos" "$ROOTFS/etc/init.d"
+XTOOL="$WORKDIR/aarch64-xtool"
+if [ ! -x "$XTOOL/usr/bin/aarch64-linux-gnu-gcc-13" ]; then
+  echo "   fetching + extracting the aarch64 cross-toolchain (root-less: apt-get download +
+       dpkg-deb -x — Debian's cross packages install cleanly outside apt entirely, same trick
+       already used for apk-tools-static/mtools/git-lfs this session) ..."
+  mkdir -p "$XTOOL/_debs"
+  ( cd "$XTOOL/_debs" && apt-get download \
+      gcc-aarch64-linux-gnu gcc-13-aarch64-linux-gnu gcc-13-aarch64-linux-gnu-base \
+      cpp-aarch64-linux-gnu cpp-13-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+      libgcc-13-dev-arm64-cross libgcc-s1-arm64-cross libc6-dev-arm64-cross \
+      linux-libc-dev-arm64-cross )
+  for deb in "$XTOOL"/_debs/*.deb; do dpkg-deb -x "$deb" "$XTOOL"; done
+  # The real, target aarch64 runtime libc (libc.so.6 / ld-linux-aarch64.so.1) is NOT part of
+  # libc6-dev-arm64-cross (headers/static libs only) — it's libc6:arm64, a foreign-architecture
+  # binary package apt won't resolve without `dpkg --add-architecture arm64` (needs root to
+  # register). Fetched directly from the real Ubuntu ports mirror instead (ports.ubuntu.com
+  # carries non-amd64/i386 architectures at a different pool path than the main mirror), pinned
+  # to the exact version matching this box's own noble release.
+  LIBC6_ARM64_DEB="libc6_2.39-0ubuntu8.8_arm64.deb"
+  curl -fsSLo "$XTOOL/_debs/$LIBC6_ARM64_DEB" \
+    "http://ports.ubuntu.com/ubuntu-ports/pool/main/g/glibc/$LIBC6_ARM64_DEB"
+  dpkg-deb -x "$XTOOL/_debs/$LIBC6_ARM64_DEB" "$XTOOL"
+  # Real, live-found quirk: Debian's cross-gcc bakes an ABSOLUTE default sysroot
+  # (/usr/aarch64-linux-gnu) at package-build time, ignoring PATH/LIBRARY_PATH/C_INCLUDE_PATH
+  # entirely for its own linker default search dirs — confirmed live via a real "cannot find
+  # libc.so.6" failure that only cleared once --sysroot was passed explicitly. libc6:arm64's own
+  # runtime .so files land at usr/lib/aarch64-linux-gnu/ (Debian multiarch layout), not
+  # usr/aarch64-linux-gnu/lib/ (the cross-gcc's own expected sysroot layout) — copied across.
+  cp "$XTOOL/usr/lib/aarch64-linux-gnu/libc.so.6" "$XTOOL/usr/aarch64-linux-gnu/lib/"
+  cp "$XTOOL/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1" "$XTOOL/usr/aarch64-linux-gnu/lib/"
+fi
+
 EMILYOS_BINARY_BUILT=0
-if ( cd /home/fatbaby/EmilyOS && GOWORK=off GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o "$WORKDIR/emilyos-arm64" ./cmd/emilyos ) 2>"$WORKDIR/go-build-arm64.err"; then
+if ( cd /home/fatbaby/EmilyOS \
+     && PATH="$XTOOL/usr/bin:$PATH" \
+        LD_LIBRARY_PATH="$XTOOL/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}" \
+        CGO_CFLAGS="--sysroot=$XTOOL" CGO_LDFLAGS="--sysroot=$XTOOL" \
+        GOWORK=off GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc-13 \
+        go build -o "$WORKDIR/emilyos-arm64" ./cmd/emilyos ) 2>"$WORKDIR/go-build-arm64.err"; then
   EMILYOS_BINARY_BUILT=1
   cp "$WORKDIR/emilyos-arm64" "$ROOTFS/usr/local/bin/emilyos"
+  file "$WORKDIR/emilyos-arm64"
 else
-  echo "REAL, HONEST GAP (not silently skipped): EmilyOS's cmd/emilyos does not currently cross-"
-  echo "compile to linux/arm64 with CGO_ENABLED=0 -- internal/fsaclmod is a real cgo package (it"
-  echo "links against a PARENA-compiled C mod, see its own header comment) with no cgo-disabled"
-  echo "fallback build tag, and this box has no aarch64 cross-compiler installed to build it with"
-  echo "CGO_ENABLED=1 GOARCH=arm64 CC=aarch64-linux-gnu-gcc either. Real error:"
+  echo "REAL, HONEST GAP (not silently skipped): the cgo cross-build still failed even with the"
+  echo "aarch64 toolchain bootstrapped root-lessly above. Real error:"
   cat "$WORKDIR/go-build-arm64.err"
-  echo "Continuing WITHOUT the EmilyOS binary in this image -- see NORTHSTAR_DISTRO.md's own"
-  echo "'Phase 2 cross-compilation gap' note. Install gcc-aarch64-linux-gnu (needs root -- queue"
-  echo "it) and re-run this script to retry with CGO_ENABLED=1 once that's available."
+  echo "Continuing WITHOUT the EmilyOS binary in this image."
 fi
 cat > "$ROOTFS/etc/init.d/emilyos" <<'EOF'
 #!/sbin/openrc-run

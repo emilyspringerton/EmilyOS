@@ -197,18 +197,34 @@ neither previously named, both folded back into the (now smaller) remaining priv
    found live: `internal/fsaclmod` (EmilyOS's PARENA-mod-backed GRANT_FS/REVOKE_FS package,
    2026-08-25) is a genuine `cgo` package with no cgo-disabled fallback build tag, so disabling
    cgo for a static cross-build excludes all its Go files entirely (`build constraints exclude
-   all Go files`). This sandbox also has no aarch64 cross-compiler to build it with
-   `CGO_ENABLED=1 GOARCH=arm64 CC=aarch64-linux-gnu-gcc` instead. The root-less script continues
-   without the binary (a real `PENDING_BINARY_BUILD` marker file is left in the image instead of
-   silently shipping nothing); the privileged script now also installs
-   `gcc-aarch64-linux-gnu`/`libc6-dev-arm64-cross` and retries the same build with cgo enabled —
-   untested end to end (needs the actual privileged run to confirm the cgo cross-compile itself
-   succeeds, not just that the toolchain installs).
+   all Go files`). **Resolved root-lessly the same day**, closing what was first queued as a
+   privileged step: Debian's `gcc-aarch64-linux-gnu` cross-toolchain packages (and their real
+   dependency chain — `gcc-13-aarch64-linux-gnu`, `binutils-aarch64-linux-gnu`,
+   `libgcc-13-dev-arm64-cross`, `libgcc-s1-arm64-cross`, `libc6-dev-arm64-cross`) install cleanly
+   via the same root-less `apt-get download` + `dpkg-deb -x` extraction already used for
+   `apk-tools-static`/`mtools`/`git-lfs` this session — cross-compilers are just files, `apt`
+   itself is the only part that needs root, and only for writing into `/var/lib/dpkg`, not for
+   anything the compiler itself does. Two real, live-found wrinkles, neither guessable in
+   advance: (a) the actual target-architecture runtime libc (`libc.so.6`, `ld-linux-aarch64.so.1`)
+   is NOT part of `libc6-dev-arm64-cross` (headers/static libs only) — it's `libc6:arm64`, a
+   foreign-architecture binary package `apt` won't resolve without `dpkg --add-architecture arm64`
+   (needs root to register), fetched instead directly from the real Ubuntu ports mirror
+   (`ports.ubuntu.com` carries non-amd64/i386 architectures at a different pool path than the
+   main mirror), version-pinned to exactly match this box's own noble release; (b) Debian's
+   cross-gcc bakes an ABSOLUTE default sysroot (`/usr/aarch64-linux-gnu`) at package-build time,
+   ignoring `PATH`/`LIBRARY_PATH`/`C_INCLUDE_PATH` entirely for the linker's own default search
+   dirs — confirmed live via a real "cannot find libc.so.6" failure that only cleared once
+   `--sysroot=<extraction dir>` was passed explicitly via `CGO_CFLAGS`/`CGO_LDFLAGS`. With both
+   fixed, `GOWORK=off GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc-13 go build`
+   produces a real, correct `ELF 64-bit LSB executable, ARM aarch64, ... dynamically linked,
+   interpreter /lib/ld-linux-aarch64.so.1` — live-verified via `file`, not just a clean exit code.
+   Folded into `build-pi-image-rootless.sh` itself (a one-time toolchain bootstrap, cached for
+   re-runs); the privileged script no longer touches the Go build at all.
 
-Net result: the privileged script no longer does ANY loop-mounting, `losetup`, or filesystem
-mounting at all — its real, remaining scope is exactly the three things checked live as genuinely
-requiring root (chroot-based package finishing + `qemu-user-static` registration, `mke2fs -d`
-against the finished tree, and the cgo cross-compile retry with a real toolchain), plus the same
+Net result: the privileged script no longer does ANY loop-mounting, `losetup`, filesystem
+mounting, or Go cross-compilation at all — its real, remaining scope is exactly the two things
+checked live as genuinely requiring root (chroot-based package finishing + `qemu-user-static`
+registration, and `mke2fs -d` against the finished tree), plus the same
 root-less `parted`+`dd` assembly technique reused rather than re-invented under sudo.
 
 **Real phased plan from here**:
