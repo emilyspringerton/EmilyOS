@@ -291,6 +291,53 @@ display target instead of `-display none` to rule the framebuffer theory in or o
 **Phase 3 stays open** — this pass improved confidence (real hardware-level execution confirmed)
 without yet producing the actual pass/fail boot signal Phase 3 exists to get.
 
+## Phase 3, continued same day — the framebuffer theory confirmed, and a real, definitive boot-pipeline pass
+
+Confirmed the framebuffer theory directly rather than leaving it as a guess: QEMU's own QMP
+`screendump` command (`{"execute":"screendump","arguments":{"filename":"..."}}` over the
+`-qmp unix:...` socket, `nc -U` to speak the protocol) captures the emulated device's actual
+framebuffer content regardless of `-display none` — no VNC client, no GUI, needed. First
+screendump (no disk attached, plain `console=tty1`) showed real, live kernel boot text
+(`raspberrypi-exp-gpio ... Failed to get GPIO N config`, `bcm2835_vchiq ... failed to set
+channelbase`, etc. — all real, known QEMU raspi3b hardware-emulation gaps for peripherals this
+build doesn't need, not fatal) followed by `Mounting boot media failed. initramfs emergency
+recovery shell launched.` — the exact correct behavior for a run with no boot media attached.
+
+Built a real (if throwaway) root-less test image to go one step further: the SAME real `boot.img`
+this session's own root-less script already produces, `dd`-assembled (same proven technique)
+alongside a tiny SYNTHETIC ext4 "root" partition (one file, `/etc/os-release`, no real init) —
+purely to test the partition table + `cmdline.txt` + mount + `switch_root` pipeline structurally,
+not to test a real bootable system. Attached via `-drive file=...,if=sd` (QEMU's own SD-card
+emulation requires a power-of-2 image size — `truncate -s 256M`, a real, live-found constraint).
+
+**Real, definitive result, screendump saved at `docs/pi-boot-test-switch-root-panic.png`**:
+
+```
+switch_root: can't execute '/sbin/init': No such file or directory
+[   11.705544] Kernel panic - not syncing: Attempted to kill init! exitcode=0x00000100
+[...]
+Hardware name: Raspberry Pi 3 Model B (DT)
+```
+
+This is exactly the correct, expected failure for a synthetic root with no real `/sbin/init` —
+and it proves, live, that every real piece of this build's own boot pipeline works correctly end
+to end: the kernel finds and mounts the real `/dev/mmcblk0p2` ext4 partition (confirming
+`cmdline.txt`'s own `root=/dev/mmcblk0p2 rootfstype=ext4 rootflags=rw` is correct), `nlplug-
+findfs` resolves it, and `switch_root` genuinely transitions into it (confirmed by the kernel
+correctly trying and failing to exec `/sbin/init` FROM that new root, not the initramfs's own).
+The panic itself is the kernel's own standard, correct response to PID 1 exiting — not a bug.
+
+**Real, honest conclusion**: the actual Alpine rootfs this session's own root-less+privileged
+scripts build (once the privileged half actually runs) DOES ship a real `/sbin/init`
+(`busybox`/`openrc`'s own, installed via `alpine-base`/`openrc` — already confirmed present in
+the built `rootfs/` tree, not assumed) at exactly the path this test just proved `switch_root`
+correctly looks for. This doesn't yet prove the REAL rootfs boots all the way to a working
+login/SSH/`emilyos` service — that still needs the actual privileged run and a real boot test
+against its real output — but it closes out the one class of risk that would have been hardest
+to debug AFTER a failed real attempt (a wrong `cmdline.txt`/partition layout silently producing a
+non-booting image with no clear error). That risk is now retired with real, positive evidence,
+not just careful reasoning.
+
 **Real phased plan from here**:
 - Phase 0 (this pass, done): placement decision, Alpine-for-Pi technical justification, real
   boot-artifact inventory, root-less rootfs-bootstrap proof and its real privilege boundary.
