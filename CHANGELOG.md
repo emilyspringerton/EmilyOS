@@ -1,4 +1,5 @@
 ## 2026-09-08
+- Root-lessly bootstrapped an aarch64 cross-toolchain (apt-get download + dpkg-deb -x) closing the cgo cross-build gap for cmd/emilyos -> linux/arm64. Fixed two real wrinkles: target libc6:arm64 fetched from ports.ubuntu.com, absolute cross-gcc sysroot overridden via --sysroot. Live-verified: a real aarch64 ELF binary now builds end to end with zero root. (sess-20260905-0720-ec33e7c5)
 - Split the Alpine/RPi image build into a root-less half (packaging/scripts/build-pi-image-rootless.sh, run and verified live) and a much smaller privileged half (sudo-queue/76). Found live: mke2fs -d needs root for Alpine's execute-only bbsuid; cmd/emilyos doesn't cross-compile to linux/arm64 with CGO_ENABLED=0 (fsaclmod is cgo-only). (sess-20260905-0720-ec33e7c5)
 
 - Pivot NORTHSTAR_DISTRO.md to Alpine for the real Raspberry Pi target (resolves the base-mechanism and target-hardware open questions). Proved a root-less apk-tools-static rootfs bootstrap; named the real privilege boundary (chroot + qemu-user-static + loop-mount) and queued sudo-queue/76-build-emilyos-pi-image.sh for the privileged Phase 1 build. (sess-20260905-0720-ec33e7c5)
