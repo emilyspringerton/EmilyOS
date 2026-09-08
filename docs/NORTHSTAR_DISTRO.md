@@ -358,8 +358,68 @@ not just careful reasoning.
   GNAT/Ada for `EmilyOS/ada/posture/`) layered onto the working image, plus the
   `stdlib/container/*`/`stdlib/pentest/*` connective tissue this document already named.
 
+## Phase 3, continued again same day — the REAL rootfs boots into OpenRC, root-lessly confirmed
+
+Went one step further than the synthetic-root test above: does the REAL, apk-installed rootfs
+(minus the chroot-based finishing pass this sandbox genuinely can't do) boot any further than
+`switch_root: can't execute '/sbin/init'`? Copied the real, built `rootfs/` tree (excluding the
+one real, execute-only `/bin/bbsuid` file `cp` itself can't read either — same real DAC
+limitation named earlier, unrelated to this test) and booted it as-is: **identical failure**,
+`can't execute '/sbin/init': No such file or directory` — the real rootfs genuinely has no
+`/sbin/init` yet, confirming live (not just theorized) that the privileged chroot-finishing step
+is load-bearing, not optional.
+
+Found the exact real reason by reading busybox's own actual `.trigger` script (extracted directly
+from the real `busybox-1.36.1-r31.apk`, not guessed): its real, load-bearing action is
+`/bin/busybox --install -s`, which creates busybox's own ~304 applet symlinks (`init`, `sh`,
+`mount`, `md5sum`, `getty`, etc.) — the exact script that fails root-lessly (`chroot: Operation
+not permitted`) in this session's own earlier bootstrap. This is REAL, direct confirmation of
+what the privileged step actually does and why it's necessary — not just an assumption.
+
+Went further still, root-lessly: root-lessly bootstrapped `qemu-user-static`'s
+`qemu-aarch64-static` (same `apt-get download` + `dpkg-deb -x` technique) and used it for a
+genuinely SAFE, READ-ONLY check — `qemu-aarch64-static -L <rootfs> <rootfs>/bin/busybox --list`
+— to confirm live that the real rootfs's own `busybox` binary really does have an `init` applet
+(304 real applet names printed, `init` and `sh` both confirmed present), WITHOUT ever executing
+`--install` itself (which does ABSOLUTE-PATH filesystem writes — running it without a real
+chroot would write into THIS HOST's own real `/sbin`, `/bin`, etc., a genuinely unacceptable
+side effect this pass deliberately avoided, not attempted).
+
+Instead, on a THROWAWAY test copy only (never the real, committed `rootfs/`), created just the
+one real symlink busybox's own installer would (`sbin/init -> ../bin/busybox`, matching Alpine's
+own relative-symlink convention) by hand via plain `ln -s` — no binary execution, no filesystem-
+root ambiguity, completely safe. **Real, definitive, screendump-captured result** (saved at
+`docs/pi-boot-test-openrc-starting.png`):
+
+```
+OpenRC 0.54 is starting up Linux 6.6.49-0-rpi (aarch64)
+* md5sum is missing, which suggests /usr is not mounted
+* /lib/rc/sh/init.sh: line 76: mount: not found
+* Caching service dependencies ...
+* Clock skew detected with `/etc/init.d/emilyos`
+* can't run '/sbin/getty'
+```
+
+**Real, honest interpretation**: `switch_root` now succeeds, busybox's `init` applet correctly
+detects the real OpenRC installation and launches its real startup sequence, and OpenRC caches
+service dependencies AND explicitly finds `/etc/init.d/emilyos` — the real EmilyOS service file
+this session's own scripts wired in. The remaining errors (`md5sum`/`mount`/`getty` "not found")
+are a direct, expected ARTIFACT of this test's own deliberate shortcut — only ONE of busybox's
+~304 real applet symlinks was created by hand, not the full set `busybox --install -s` creates
+for real. They are not evidence of a bug in the real build; they're exactly what's expected to
+disappear once the actual privileged `apk fix` (which re-runs busybox's real trigger script,
+creating all 304 real symlinks) runs for real. This test doesn't replace that real privileged
+run — it forecasts, with real, live evidence rather than hope, that the actual build should get
+meaningfully further than "won't boot at all," probably to a working service/login state.
+
 ## Status
 
-Phase 0 done (this pass). Phase 1 (the real privileged build script) is the next concrete unit of
-work — queue it via `sudo-queue/`, matching this monorepo's own established convention for any
-step needing root this sandbox doesn't have.
+Phase 0 done. Phase 1 (root-less half) done and re-verified clean from scratch. Phase 3 (boot-
+test) has real, live, positive evidence at three levels now: the boot pipeline (cmdline/mount/
+switch_root) works, `init`/OpenRC start correctly once `/sbin/init` exists, and OpenRC finds the
+real `emilyos` service — all confirmed via QEMU screendumps, not assumed. The one remaining real
+gate before a first genuinely complete, bootable `.img` exists is still the actual privileged
+run — `sudo-queue/76-build-emilyos-pi-image.sh` (top-level monorepo), which does the real,
+full `busybox --install -s` (via `apk fix`) this session's own test could only partially,
+carefully hand-simulate. Queue it via `sudo-queue/`, matching this monorepo's own established
+convention for any step needing root this sandbox doesn't have.
