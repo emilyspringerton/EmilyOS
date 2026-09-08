@@ -100,9 +100,94 @@ a stronger claim than attesting to one service's).
    session's own `macspoof.prn` work) — not integrated or cross-referenced here, flagged as a
    real connection point for whoever picks this up next.
 
+## Pivot: Alpine, targeting Raspberry Pi (2026-09-08)
+
+Founder, real-time: *"ok can we start working on an installable alpine based raspi distro I
+guess in Emily os repo."* This resolves two of the four open questions above, not a rejection of
+the rest of this document — the GNU-load-bearing-walls / minimal-by-default / PARENA-native /
+included-package guidance from 2026-08-25 all still applies, base distro aside. Confirmed with
+the founder directly before writing anything: **EmilyOS becomes the real distro** (not a generic
+distro that happens to run EmilyOS's binary, and not just image-build plumbing with the branding
+question deferred) — this repo's own name stops being aspirational, and `image-builder-rpi`
+(S213)'s already-forked tooling is the real thing to adapt, with `FLASH` (S213) staying the
+separate "write the finished image to an SD card" tool it already is.
+
+**Open question 1 (base mechanism), resolved by a real technical constraint, not preference**:
+Arch has no first-class official ARM/Raspberry Pi story — "Arch Linux ARM" is a separate,
+community-maintained project, not upstream Arch itself, which is what made question 1
+(`archiso`/`mkarch` vs. an installer-on-real-Arch) genuinely hard to answer for a Pi target.
+Alpine, by contrast, ships a real, official, first-class `aarch64` release train with a
+Pi-specific flavor — checked live, not assumed (`https://dl-cdn.alpinelinux.org/alpine/v3.20/
+releases/aarch64/alpine-rpi-3.20.10-aarch64.tar.gz`, downloaded and inspected in full this pass).
+That artifact is a complete real boot-partition bundle: RPi firmware (`bootcode.bin`, `start.elf`/
+`start4.elf`, `fixup.dat`/`fixup4.dat`), a prebuilt `vmlinuz-rpi` kernel + `initramfs-rpi` +
+`modloop-rpi` (kernel modules as a squashfs), and real device-tree blobs/overlays covering the
+actual current Pi hardware matrix: Zero 2 (W), 3B/3B+/3A+/CM3, 4B/400/CM4, 5B/CM5 — plus a
+`config.txt`/`cmdline.txt` pair and a real `apks/aarch64/*.apk` package cache. **Real, decisive
+finding: this makes "from-scratch ISO/kernel build" a non-question for the Pi target** — Alpine
+upstream already builds and ships the real, tested kernel+firmware+dtb layer; there is no reason
+to rebuild any of that ourselves, only to assemble a root filesystem and an image around it. This
+directly extends the `PARENA-0001` finding already logged elsewhere in this monorepo's own
+BACKLOG (PARENA's C emitter + runtime already compile and link clean, fully static, under a musl
+toolchain — Alpine's real libc) — Alpine was already the musl-portability target, now it's also
+the real Pi target.
+
+**Open question 2 (target hardware), resolved**: Raspberry Pi, not the ThinkPad/VPS branches
+that question originally named — those stay open, unaffected, for whenever they're picked up.
+
+**Real, live root-less build-path proof (this pass, no root, no Docker, no VM)**: Alpine
+publishes `apk-tools-static` for `x86_64` (the same real bootstrap mechanism Alpine's own
+official Docker base-image build uses to cross-bootstrap an `aarch64` rootfs from a non-Alpine,
+non-ARM host). Downloaded it, extracted `apk.static`, and ran a real
+`--root <dir> --arch aarch64 --initdb add alpine-base openrc` against the real upstream `v3.20`
+`main`/`community` repos. Result: **24/24 packages fetched and extracted correctly** (~17 MiB,
+real `/etc/os-release` reporting `Alpine Linux v3.20.10`) — the package-fetch/extraction half of
+rootfs assembly needs no privilege at all. **Real, honest boundary found live**: every package's
+`chroot`-based post-install/trigger script (busybox, alpine-baselayout, openrc) failed with
+`chroot: Operation not permitted`, and a bulk "104 errors updating directory permissions" pass
+also failed — both need real `CAP_SYS_CHROOT`/ownership privilege this sandbox's own `uid=1000`
+doesn't have. Checked two real, standard privilege-less workarounds before concluding this is a
+genuine, unavoidable boundary here: `fakeroot` is installed but only fakes `stat`/`chown`-family
+syscalls, not `chroot(2)` itself, so it doesn't help the failing post-install scripts;
+`unshare --user --map-root-user` (unprivileged Linux user namespaces, which the kernel itself
+has enabled — confirmed via `/proc/sys/kernel/unprivileged_userns_clone` = `1`) is additionally
+blocked by this specific sandbox's own container policy (`write failed /proc/self/uid_map:
+Operation not permitted`) — a real, separate restriction beyond plain root-vs-non-root. Neither
+`proot` nor `bubblewrap` is installed here either. **Conclusion, named honestly rather than
+worked around with something fragile**: the rootfs-finishing step and the actual image assembly
+(FAT32 boot partition + ext4 root partition into one flashable `.img`) need a real privileged
+pass — queued the same way every other root-requiring step in this monorepo already is
+(`sudo-queue/`), not attempted with a workaround likely to silently produce a broken image.
+
+**Real, root-less pieces already usable for the privileged script when it runs**: `debugfs -w`
+(present on this box) can write files into an ext4 image directly without mounting it — a real,
+already-established technique for building filesystem images without root; the FAT32 boot
+partition needs `mtools` (`mcopy`/`mformat`), not installed here, installable either via
+`sudo-queue` or via the same root-less `apt-get download` + `dpkg-deb -x` extraction trick
+`PARENA-0001`'s own musl-toolchain work already used successfully this monorepo.
+
+**Real phased plan from here**:
+- Phase 0 (this pass, done): placement decision, Alpine-for-Pi technical justification, real
+  boot-artifact inventory, root-less rootfs-bootstrap proof and its real privilege boundary.
+- Phase 1: a real, single `sudo-queue/` script doing the full privileged build — `apk` install
+  into a scratch root (finishing the chroot-based post-installs this pass couldn't), assembling
+  the real FAT32 boot + ext4 root image from Alpine's own `alpine-rpi` release bundle plus that
+  rootfs, producing one genuinely flashable `.img`.
+- Phase 2: wire EmilyOS's own Go binary into the image as a real OpenRC service (`/etc/init.d/
+  emilyos`) — resolves this document's own open question 3 (service-on-boot vs. PID-1-adjacent)
+  in the simpler direction for v0, matching the founder's own "make it super small to start"
+  guidance; a deeper boot-sequence hook stays a real, later option, not required for a first
+  bootable image.
+- Phase 3: boot-test the image — needs either real Pi hardware or `qemu-system-aarch64` (not
+  installed in this sandbox, named honestly, not assumed available).
+- Phase 4: hand the finished `.img` to `FLASH` (S213) for the real "write to an SD card" step,
+  closing the loop with the existing thread instead of duplicating its scope.
+- Phase 5+: the 2026-08-25 package-selection guidance (PARENA, vim, `emily` CLI, SSH, GCC,
+  GNAT/Ada for `EmilyOS/ada/posture/`) layered onto the working image, plus the
+  `stdlib/container/*`/`stdlib/pentest/*` connective tissue this document already named.
+
 ## Status
 
-Scoping only. No milestone plan, no ISO, no installer script. Real next step, per the founder's
-own established "spec before implementation" discipline: resolve question 1 (from-scratch ISO vs.
-installer-on-real-Arch) before any implementation work starts — it's the single decision every
-other piece of scope depends on.
+Phase 0 done (this pass). Phase 1 (the real privileged build script) is the next concrete unit of
+work — queue it via `sudo-queue/`, matching this monorepo's own established convention for any
+step needing root this sandbox doesn't have.
