@@ -157,14 +157,16 @@ echo "== 3b. cross-compile the PARENA-powered coreutils/shell (docs/PARENA_COREU
        founder real-time, 2026-09-08: 'the alpine pi installable parena powered emily os.' Staged
        as AVAILABLE, NOT DEFAULT (that doc's own explicit Phase 5 boundary, matching
        turbogrep/turbosed's own established precedent) -- parenabusybox's applet symlinks
-       (echo/basename/pwd/true/false) go in their own dedicated, off-PATH directory rather than
-       /usr/local/bin, so they never silently shadow Alpine's real coreutils; only parenash (a
-       uniquely-named binary, no collision risk) is placed directly on PATH. Real, honest,
-       PARENA's own compiler runs NATIVELY (x86_64) here to emit plain, portable C -- only the
-       FINAL compile of that generated C + host driver needs the aarch64 cross-compiler, the
-       exact same two-stage shape src/emit.c's own C target already has everywhere else.
+       (echo/basename/pwd/true/false/wc/head/yes/cat/sleep/env, the full Phase 1 set as of
+       2026-09-08's 'also a parena based busybox to go with it' follow-up) go in their own
+       dedicated, off-PATH directory rather than /usr/local/bin, so they never silently shadow
+       Alpine's real coreutils; only parenash (a uniquely-named binary, no collision risk) is
+       placed directly on PATH. Real, honest, PARENA's own compiler runs NATIVELY (x86_64) here
+       to emit plain, portable C -- only the FINAL compile of that generated C + host driver
+       needs the aarch64 cross-compiler, the exact same two-stage shape src/emit.c's own C
+       target already has everywhere else.
        Same musl-vs-glibc dynamic-linker gap named in step 3's own comment above applies here
-       too -- fixed the same way (-static below), reverified live: all 4 parenabusybox applets
+       too -- fixed the same way (-static below), reverified live: all 10 parenabusybox applets
        plus a real parenash script execute correctly under qemu-aarch64-static against the real
        rootfs. =="
 PARENA_DIR="/home/fatbaby/PARENA"
@@ -172,6 +174,7 @@ PARENA_ARM64_BUILT=0
 if [ -x "$PARENA_DIR/parena" ] && ( cd "$PARENA_DIR" \
      && ./parena build stdlib/string.prn stdlib/coreutils/echo.prn \
           stdlib/coreutils/basename.prn stdlib/coreutils/pwd.prn \
+          stdlib/coreutils/wc.prn stdlib/coreutils/head.prn stdlib/coreutils/yes.prn \
           -o "$WORKDIR/parenabusybox_gen.c" \
      && cat "$WORKDIR/parenabusybox_gen.c" tools/parenabusybox_host.c \
           > "$WORKDIR/parenabusybox_full.c" \
@@ -189,7 +192,7 @@ if [ -x "$PARENA_DIR/parena" ] && ( cd "$PARENA_DIR" \
   PARENA_ARM64_BUILT=1
   mkdir -p "$ROOTFS/usr/local/parena-coreutils"
   cp "$WORKDIR/parenabusybox-arm64" "$ROOTFS/usr/local/parena-coreutils/parenabusybox"
-  for applet in echo basename pwd true false; do
+  for applet in echo basename pwd true false wc head yes cat sleep env; do
     ln -sf parenabusybox "$ROOTFS/usr/local/parena-coreutils/$applet"
   done
   cp "$WORKDIR/parenash-arm64" "$ROOTFS/usr/local/bin/parenash"
