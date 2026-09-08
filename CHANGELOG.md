@@ -1,3 +1,7 @@
+## 2026-09-08
+
+- Pivot NORTHSTAR_DISTRO.md to Alpine for the real Raspberry Pi target (resolves the base-mechanism and target-hardware open questions). Proved a root-less apk-tools-static rootfs bootstrap; named the real privilege boundary (chroot + qemu-user-static + loop-mount) and queued sudo-queue/76-build-emilyos-pi-image.sh for the privileged Phase 1 build. (sess-20260905-0720-ec33e7c5)
+
 ## 2026-08-28
 
 - CI fix: enabled CGO for the emilyos build -- internal/fsaclmod (a real cgo-based PARENA mod added 2026-08-25) had been silently breaking the static build since. commit 2147f89. (sess-20260825-1938-f6bd411e)
