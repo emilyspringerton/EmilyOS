@@ -412,14 +412,52 @@ creating all 304 real symlinks) runs for real. This test doesn't replace that re
 run — it forecasts, with real, live evidence rather than hope, that the actual build should get
 meaningfully further than "won't boot at all," probably to a working service/login state.
 
+## Phase 1, continued (2026-09-08) — "PARENA powered": the coreutils/shell staged, and a real, previously-undiscovered musl/glibc gap fixed
+
+Founder real-time: "lets work on the alpine pi installable parena powered emily os." Step 3b
+added to `packaging/scripts/build-pi-image-rootless.sh`, reusing the exact same root-less
+`$XTOOL` aarch64 cross-toolchain step 3 already bootstraps: cross-compiles
+`PARENA/docs/PARENA_COREUTILS_NORTHSTAR.md`'s own parenabusybox (echo/basename/pwd/true/false)
+and parenash (the real shell) for aarch64 — PARENA's own compiler still runs NATIVELY (x86_64)
+to emit portable C, matching `src/emit.c`'s own two-stage shape everywhere else; only the final
+compile of that generated C + the C host driver needs the cross-compiler. Staged as AVAILABLE,
+NOT DEFAULT, matching `turbogrep`/`turbosed`'s own precedent and that doc's own explicit,
+previously-deferred Phase 5 boundary — parenabusybox's applet symlinks live in their own
+dedicated `/usr/local/parena-coreutils/` directory, off Alpine's default `$PATH`, so they never
+silently shadow the real coreutils; parenash (a uniquely-named binary) goes straight into
+`/usr/local/bin/`.
+
+**Real, previously-undiscovered gap found and fixed along the way, affecting the ALREADY-EXISTING
+`emilyos` binary too, not just this new work**: this session's aarch64 cross-toolchain is
+Debian/Ubuntu's, GLIBC-targeted (dynamic linker `/lib/ld-linux-aarch64.so.1`) — but Alpine, this
+image's actual target, ships MUSL (`/lib/ld-musl-aarch64.so.1`), an incompatible ABI. Root-lessly
+re-bootstrapped `qemu-user-static` (same `apt-get download`+`dpkg-deb -x` trick this doc's own
+Phase 3 already used) to actually EXECUTE the cross-compiled binaries against the real rootfs,
+not just check `file` output — and found live that a plain dynamic cross-build of `emilyos-arm64`
+fails with `Could not open /lib/ld-linux-aarch64.so.1`, meaning every prior build of this image
+would have shipped a Pi that could never actually start its own core service. Fixed via
+`CGO_LDFLAGS="... -static"` (glibc static linking needs no runtime loader, so it runs correctly
+under musl too) — the linker warns about `getpwnam_r`/`getgrgid_r`/`getgrouplist` (Go's `os/user`
+package is reachable in the dependency graph), a real, accepted, checked-not-assumed risk since
+EmilyOS itself never calls user/group lookups (confirmed via grep across `internal/`), so those
+symbols are linked but dead code. Live-verified past the warning: `qemu-aarch64-static` runs the
+resulting static `emilyos` binary correctly (`--help` prints its real usage) against the real
+rootfs. The same `-static` fix applies to the new PARENA binaries; all of `parenabusybox`'s 4
+applets plus a real `parenash` script (sequencing, exit codes) verified executing correctly the
+same way.
+
 ## Status
 
-Phase 0 done. Phase 1 (root-less half) done and re-verified clean from scratch. Phase 3 (boot-
-test) has real, live, positive evidence at three levels now: the boot pipeline (cmdline/mount/
-switch_root) works, `init`/OpenRC start correctly once `/sbin/init` exists, and OpenRC finds the
-real `emilyos` service — all confirmed via QEMU screendumps, not assumed. The one remaining real
-gate before a first genuinely complete, bootable `.img` exists is still the actual privileged
-run — `sudo-queue/76-build-emilyos-pi-image.sh` (top-level monorepo), which does the real,
-full `busybox --install -s` (via `apk fix`) this session's own test could only partially,
-carefully hand-simulate. Queue it via `sudo-queue/`, matching this monorepo's own established
-convention for any step needing root this sandbox doesn't have.
+Phase 0 done. Phase 1 (root-less half) done, re-verified clean from scratch, and now also stages
+a working, PARENA-powered coreutils/shell alongside a musl-compatible (statically-linked)
+`emilyos` binary — a real, previously-undiscovered gap that would have silently produced a
+non-functional core service on every prior build, found and fixed this pass via live
+`qemu-aarch64-static` execution testing, not just architecture-checking via `file`. Phase 3
+(boot-test) has real, live, positive evidence at three levels now: the boot pipeline
+(cmdline/mount/switch_root) works, `init`/OpenRC start correctly once `/sbin/init` exists, and
+OpenRC finds the real `emilyos` service — all confirmed via QEMU screendumps, not assumed. The
+one remaining real gate before a first genuinely complete, bootable `.img` exists is still the
+actual privileged run — `sudo-queue/76-build-emilyos-pi-image.sh` (top-level monorepo), which
+does the real, full `busybox --install -s` (via `apk fix`) this session's own test could only
+partially, carefully hand-simulate. Queue it via `sudo-queue/`, matching this monorepo's own
+established convention for any step needing root this sandbox doesn't have.

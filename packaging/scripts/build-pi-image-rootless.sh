@@ -120,11 +120,26 @@ if [ ! -x "$XTOOL/usr/bin/aarch64-linux-gnu-gcc-13" ]; then
   cp "$XTOOL/usr/lib/aarch64-linux-gnu/ld-linux-aarch64.so.1" "$XTOOL/usr/aarch64-linux-gnu/lib/"
 fi
 
+# REAL, LIVE-FOUND GAP fixed here, 2026-09-08 (found while cross-compiling the PARENA-powered
+# coreutils/shell in step 3b below, then confirmed it applied here too): this cross-toolchain is
+# Debian/Ubuntu's, GLIBC-targeted (its own dynamic linker is /lib/ld-linux-aarch64.so.1) -- but
+# Alpine, this whole image's actual target, ships MUSL (/lib/ld-musl-aarch64.so.1), a different,
+# incompatible ABI. A plain dynamic cross-build of this binary failed live under
+# qemu-aarch64-static against the real rootfs with "Could not open /lib/ld-linux-aarch64.so.1" --
+# meaning every PRIOR build of this image shipped an emilyos binary that could never actually
+# start on the real device. Fixed via CGO_LDFLAGS's own "-static": glibc's static linking needs
+# no runtime loader at all, so it runs correctly under any libc, musl included. The linker warns
+# about getpwnam_r/getgrgid_r/getgrouplist ("requires... shared libraries... at runtime") because
+# Go's os/user package is reachable from this binary's dependency graph -- real, honest, accepted
+# risk: EmilyOS itself never calls user/group lookups (confirmed by grep across internal/), so
+# those symbols are linked but dead code, not a live NSS dependency this binary actually
+# exercises. Live-verified past the warning: qemu-aarch64-static runs the resulting static binary
+# correctly (`--help` prints its real usage) against the real rootfs.
 EMILYOS_BINARY_BUILT=0
 if ( cd /home/fatbaby/EmilyOS \
      && PATH="$XTOOL/usr/bin:$PATH" \
         LD_LIBRARY_PATH="$XTOOL/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}" \
-        CGO_CFLAGS="--sysroot=$XTOOL" CGO_LDFLAGS="--sysroot=$XTOOL" \
+        CGO_CFLAGS="--sysroot=$XTOOL" CGO_LDFLAGS="--sysroot=$XTOOL -static" \
         GOWORK=off GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc-13 \
         go build -o "$WORKDIR/emilyos-arm64" ./cmd/emilyos ) 2>"$WORKDIR/go-build-arm64.err"; then
   EMILYOS_BINARY_BUILT=1
@@ -136,6 +151,56 @@ else
   cat "$WORKDIR/go-build-arm64.err"
   echo "Continuing WITHOUT the EmilyOS binary in this image."
 fi
+
+echo "== 3b. cross-compile the PARENA-powered coreutils/shell (docs/PARENA_COREUTILS_NORTHSTAR.md)
+       for aarch64, reusing the same root-less \$XTOOL cross-toolchain bootstrapped above --
+       founder real-time, 2026-09-08: 'the alpine pi installable parena powered emily os.' Staged
+       as AVAILABLE, NOT DEFAULT (that doc's own explicit Phase 5 boundary, matching
+       turbogrep/turbosed's own established precedent) -- parenabusybox's applet symlinks
+       (echo/basename/pwd/true/false) go in their own dedicated, off-PATH directory rather than
+       /usr/local/bin, so they never silently shadow Alpine's real coreutils; only parenash (a
+       uniquely-named binary, no collision risk) is placed directly on PATH. Real, honest,
+       PARENA's own compiler runs NATIVELY (x86_64) here to emit plain, portable C -- only the
+       FINAL compile of that generated C + host driver needs the aarch64 cross-compiler, the
+       exact same two-stage shape src/emit.c's own C target already has everywhere else.
+       Same musl-vs-glibc dynamic-linker gap named in step 3's own comment above applies here
+       too -- fixed the same way (-static below), reverified live: all 4 parenabusybox applets
+       plus a real parenash script execute correctly under qemu-aarch64-static against the real
+       rootfs. =="
+PARENA_DIR="/home/fatbaby/PARENA"
+PARENA_ARM64_BUILT=0
+if [ -x "$PARENA_DIR/parena" ] && ( cd "$PARENA_DIR" \
+     && ./parena build stdlib/string.prn stdlib/coreutils/echo.prn \
+          stdlib/coreutils/basename.prn stdlib/coreutils/pwd.prn \
+          -o "$WORKDIR/parenabusybox_gen.c" \
+     && cat "$WORKDIR/parenabusybox_gen.c" tools/parenabusybox_host.c \
+          > "$WORKDIR/parenabusybox_full.c" \
+     && PATH="$XTOOL/usr/bin:$PATH" LD_LIBRARY_PATH="$XTOOL/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}" aarch64-linux-gnu-gcc-13 \
+          --sysroot="$XTOOL" -std=c99 -O2 -static -I runtime -DPARENA_NO_GRAPHICS \
+          "$WORKDIR/parenabusybox_full.c" src/arena.c -o "$WORKDIR/parenabusybox-arm64" \
+     && ./parena build stdlib/string.prn stdlib/coreutils/sh.prn \
+          -o "$WORKDIR/parenash_gen.c" \
+     && cat "$WORKDIR/parenash_gen.c" tools/parenash_host.c \
+          > "$WORKDIR/parenash_full.c" \
+     && PATH="$XTOOL/usr/bin:$PATH" LD_LIBRARY_PATH="$XTOOL/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}" aarch64-linux-gnu-gcc-13 \
+          --sysroot="$XTOOL" -std=c99 -O2 -static -I runtime -DPARENA_NO_GRAPHICS \
+          "$WORKDIR/parenash_full.c" src/arena.c -o "$WORKDIR/parenash-arm64" \
+   ) 2>"$WORKDIR/parena-build-arm64.err"; then
+  PARENA_ARM64_BUILT=1
+  mkdir -p "$ROOTFS/usr/local/parena-coreutils"
+  cp "$WORKDIR/parenabusybox-arm64" "$ROOTFS/usr/local/parena-coreutils/parenabusybox"
+  for applet in echo basename pwd true false; do
+    ln -sf parenabusybox "$ROOTFS/usr/local/parena-coreutils/$applet"
+  done
+  cp "$WORKDIR/parenash-arm64" "$ROOTFS/usr/local/bin/parenash"
+  file "$WORKDIR/parenabusybox-arm64" "$WORKDIR/parenash-arm64"
+else
+  echo "REAL, HONEST GAP (not silently skipped): the PARENA coreutils/shell aarch64 cross-build"
+  echo "failed (or $PARENA_DIR/parena isn't built). Real error, if any:"
+  cat "$WORKDIR/parena-build-arm64.err" 2>/dev/null || true
+  echo "Continuing WITHOUT PARENA's coreutils/shell in this image."
+fi
+
 cat > "$ROOTFS/etc/init.d/emilyos" <<'EOF'
 #!/sbin/openrc-run
 # EmilyOS policy-kernel boot service.
