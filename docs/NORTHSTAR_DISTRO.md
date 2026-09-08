@@ -166,6 +166,51 @@ partition needs `mtools` (`mcopy`/`mformat`), not installed here, installable ei
 `sudo-queue` or via the same root-less `apt-get download` + `dpkg-deb -x` extraction trick
 `PARENA-0001`'s own musl-toolchain work already used successfully this monorepo.
 
+## Refinement: shrinking the privileged surface, live-tested (2026-09-08, same-day follow-up)
+
+Went further before just queuing the whole build behind root: proved live that `parted` can
+partition a **plain regular file** directly (no `losetup`, no loop device — confirmed via
+`parted -s file.img mklabel msdos` + `mkpart`, `print` showing exact byte offsets), that
+`mkfs.vfat`/`mkfs.ext4` format plain files the same way, that `mtools`'s `mcopy` writes into an
+unmounted FAT32 image file with zero mount, and that `dd`-copying two independently-built
+sub-images into one combined file at exact byte offsets is byte-identical to building them in
+place (checked via `cmp` against both partitions after assembly). This meant the ENTIRE image
+layout/assembly step — not just package fetch — could move out of the privileged half.
+
+Acted on it: split the single monolithic privileged script into a new root-less script,
+`EmilyOS/packaging/scripts/build-pi-image-rootless.sh`, and ran it for real (not just written —
+executed end to end in this sandbox): fetches the same `alpine-rpi-3.20.10-aarch64.tar.gz` +
+`apk-tools-static`, does the same root-less `apk` package bootstrap already proven above, builds
+the real FAT32 `boot.img` from Alpine's own boot bundle via `mtools` (verified live: `mdir`
+listing shows real `bcm2710-rpi-3-b.dtb`/`bcm2712-rpi-5-b.dtb`/etc. inside it), and attempts
+EmilyOS's own Go cross-build. Two further real, honest gaps found live while actually running it,
+neither previously named, both folded back into the (now smaller) remaining privileged script
+(`sudo-queue/76-build-emilyos-pi-image.sh`, top-level monorepo) rather than worked around:
+
+1. **`mke2fs -d <dir>` also needs root**, not just the chroot-based post-install step — found
+   live via a real "Permission denied while opening 'bbsuid'" failure: Alpine's own
+   `busybox-suid` package ships `/bin/bbsuid` as mode `---x--x--x` (execute-only, unreadable even
+   by its own owning user) — a real, intentional hardening convention on Alpine's part, not a
+   bug. A non-root reader genuinely cannot copy that file's contents to build the ext4 image;
+   root bypasses DAC read checks entirely, so this is a non-issue once genuinely privileged.
+2. **EmilyOS's own `cmd/emilyos` does not cross-compile to `linux/arm64` with `CGO_ENABLED=0`** —
+   found live: `internal/fsaclmod` (EmilyOS's PARENA-mod-backed GRANT_FS/REVOKE_FS package,
+   2026-08-25) is a genuine `cgo` package with no cgo-disabled fallback build tag, so disabling
+   cgo for a static cross-build excludes all its Go files entirely (`build constraints exclude
+   all Go files`). This sandbox also has no aarch64 cross-compiler to build it with
+   `CGO_ENABLED=1 GOARCH=arm64 CC=aarch64-linux-gnu-gcc` instead. The root-less script continues
+   without the binary (a real `PENDING_BINARY_BUILD` marker file is left in the image instead of
+   silently shipping nothing); the privileged script now also installs
+   `gcc-aarch64-linux-gnu`/`libc6-dev-arm64-cross` and retries the same build with cgo enabled —
+   untested end to end (needs the actual privileged run to confirm the cgo cross-compile itself
+   succeeds, not just that the toolchain installs).
+
+Net result: the privileged script no longer does ANY loop-mounting, `losetup`, or filesystem
+mounting at all — its real, remaining scope is exactly the three things checked live as genuinely
+requiring root (chroot-based package finishing + `qemu-user-static` registration, `mke2fs -d`
+against the finished tree, and the cgo cross-compile retry with a real toolchain), plus the same
+root-less `parted`+`dd` assembly technique reused rather than re-invented under sudo.
+
 **Real phased plan from here**:
 - Phase 0 (this pass, done): placement decision, Alpine-for-Pi technical justification, real
   boot-artifact inventory, root-less rootfs-bootstrap proof and its real privilege boundary.
