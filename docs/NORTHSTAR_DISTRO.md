@@ -227,6 +227,37 @@ checked live as genuinely requiring root (chroot-based package finishing + `qemu
 registration, and `mke2fs -d` against the finished tree), plus the same
 root-less `parted`+`dd` assembly technique reused rather than re-invented under sudo.
 
+## Real, live-found boot-config gap fixed before it could waste a privileged run (2026-09-08, third same-day pass)
+
+Caught before ever running the privileged script, by reading the real `initramfs-rpi` init
+script directly (extracted and grepped, not assumed): Alpine's own stock `cmdline.txt`
+(`modules=loop,squashfs,sd-mod,usb-storage quiet console=tty1`) has **no `root=` at all** — with
+none set, mkinitfs's real `init` takes Alpine's DISKLESS boot path (unpack an apkovl into a
+tmpfs root), never touching a persistent disk partition. That is categorically the wrong boot
+mode for an apk-installed rootfs baked into a real ext4 partition, which is exactly what this
+build assembles. Confirmed live in the same init script's own `if [ -n "$KOPT_root" ]` branch:
+setting `root=` instead runs `nlplug-findfs` + `switch_root` into that real partition — the
+actual disk-install path this image needs. Fixed: `build-pi-image-rootless.sh` now writes its
+own `cmdline.txt` (`root=/dev/mmcblk0p2 rootfstype=ext4 rootflags=rw quiet console=tty1`) instead
+of copying Alpine's stock diskless one verbatim. Checked the real kernel config before adding any
+`modules=` entries: MMC/SDHCI and ext4 are both built directly into this kernel (`CONFIG_MMC_
+BLOCK=y`, `CONFIG_MMC_SDHCI=y`, `CONFIG_EXT4_FS=y`, not `=m`), so none are needed.
+
+Same pass, found by cross-checking the built rootfs's own real `/etc/init.d/` listing against
+this script's existing `rc-update` calls: `root`, `fsck`, `localmount`, `swap`, `seedrng` were
+missing entirely — real, standard Alpine boot-runlevel services a disk-installed system needs
+(`root` remounts the kernel-mounted root per fstab and runs pending fsck; `fsck`/`localmount`
+handle everything else in `/etc/fstab`, here just `/boot`). Added to `sudo-queue/76`'s own
+`rc-update` list (real names confirmed present in the rootfs, not guessed) as a belt-and-
+suspenders match to Alpine's own documented default, alongside the explicit `rootflags=rw` above
+(so a working boot doesn't depend on getting `root`'s own service ordering exactly right).
+
+Neither of these is boot-tested yet — this sandbox has no real Pi hardware or
+`qemu-system-aarch64` (Phase 3, below, still not started) — but both are real, live-checked
+fixes against the actual init script and the actual rootfs contents, not guesses, and catching
+them here means the first real privileged run has a much better chance of producing something
+that actually boots, not just something that assembles cleanly.
+
 **Real phased plan from here**:
 - Phase 0 (this pass, done): placement decision, Alpine-for-Pi technical justification, real
   boot-artifact inventory, root-less rootfs-bootstrap proof and its real privilege boundary.

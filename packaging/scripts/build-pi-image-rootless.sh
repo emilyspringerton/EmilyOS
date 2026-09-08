@@ -160,13 +160,34 @@ if [ "$EMILYOS_BINARY_BUILT" -eq 0 ]; then
 fi
 
 echo "== 4. build the FAT32 boot image from Alpine's own RPi boot bundle (firmware, kernel, dtbs,
-       overlays, config.txt/cmdline.txt) via mtools — no mount needed =="
+       overlays, config.txt) via mtools — no mount needed =="
 rm -f "$BOOT_IMG"
 fallocate -l "${BOOT_SIZE_MB}M" "$BOOT_IMG"
 mkfs.vfat -F 32 -n BOOT "$BOOT_IMG" >/dev/null
+
+# REAL, LIVE-FOUND BOOT-CONFIG GAP: Alpine's own stock cmdline.txt
+# ("modules=loop,squashfs,sd-mod,usb-storage quiet console=tty1") has NO `root=` — confirmed by
+# extracting initramfs-rpi's own real /init script (mkinitfs's standard init): with no `root=`
+# kernel arg it takes Alpine's DISKLESS boot path (unpack an apkovl into a tmpfs root, or drop
+# into setup-alpine), never touching a persistent disk partition at all. That's categorically the
+# wrong boot mode for what this build assembles (a real, persistent apk-installed rootfs baked
+# into an ext4 partition) — confirmed live in the SAME init script's own `if [ -n "$KOPT_root" ]`
+# branch (grep'd directly, not guessed) that setting `root=` instead runs `nlplug-findfs` +
+# `switch_root` into that real partition, the actual "installed to disk" path this image needs.
+# Real, checked-not-assumed kernel config: this kernel already builds MMC/SDHCI (CONFIG_MMC_BLOCK,
+# CONFIG_MMC_SDHCI) and ext4 (CONFIG_EXT4_FS) in directly (`=y`, not `=m`) — no extra `modules=`
+# entries needed for either. `rootflags=rw` is set explicitly rather than relying on openrc's own
+# `root` service to remount rw (that service IS also added to the boot runlevel below, in the
+# privileged script's rc-update list, as a real belt-and-suspenders match to Alpine's own default
+# convention — but an explicit `rw` here means a real, working boot doesn't depend on getting that
+# service's own ordering exactly right).
+cat > "$WORKDIR/cmdline.txt" <<'EOF'
+root=/dev/mmcblk0p2 rootfstype=ext4 rootflags=rw quiet console=tty1
+EOF
+
 MTOOLS_SKIP_CHECK=1 mcopy -s -i "$BOOT_IMG" "$BOOTSRC"/*.dtb "$BOOTSRC"/*.elf "$BOOTSRC"/*.dat \
-  "$BOOTSRC"/*.bin "$BOOTSRC"/config.txt "$BOOTSRC"/cmdline.txt "$BOOTSRC"/overlays "$BOOTSRC"/boot \
-  ::/
+  "$BOOTSRC"/*.bin "$BOOTSRC"/config.txt "$BOOTSRC"/overlays "$BOOTSRC"/boot ::/
+MTOOLS_SKIP_CHECK=1 mcopy -i "$BOOT_IMG" "$WORKDIR/cmdline.txt" ::cmdline.txt
 
 echo "== done (root-less half): $BOOTSRC prepared, $BOOT_IMG built, $ROOTFS populated with apk"
 echo "packages (post-install/trigger scripts pending) plus the EmilyOS init script and (if the"
